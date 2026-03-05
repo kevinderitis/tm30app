@@ -31,7 +31,7 @@ export function authRouter() {
       name: user.name,
       role: user.role
     };
-
+    console.log("Usuario logueado:", req.session.user);
     res.json({ ok: true, user: req.session.user });
   });
 
