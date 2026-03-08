@@ -11,65 +11,64 @@ export function authRouter() {
 
 
 
-router.post("/login", async (req, res) => {
-  console.log(req.get("origin"), req.get("referer"));
+  router.post("/login", async (req, res) => {
+    console.log(req.get("origin"), req.get("referer"));
 
-  const schema = z.object({
-    email: z.string().email(),
-    password: z.string().min(1)
-  });
-
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "Body inválido" });
-  }
-
-  try {
-    const email = parsed.data.email.toLowerCase();
-    const user = await User.findOne({ email });
-
-    if (!user || !user.isActive) {
-      return res.status(401).json({ error: "Credenciales inválidas" });
-    }
-
-    const ok = await bcrypt.compare(parsed.data.password, user.passwordHash);
-    if (!ok) {
-      return res.status(401).json({ error: "Credenciales inválidas" });
-    }
-
-    const payload = {
-      id: String(user._id),
-      email: user.email,
-      name: user.name,
-      role: user.role
-    };
-
-    const token = jwt.sign(
-      payload,
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
-    );
-
-    console.log("Usuario logueado:", payload);
-
-    return res.json({
-      ok: true,
-      token,
-      user: payload
+    const schema = z.object({
+      email: z.string().email(),
+      password: z.string().min(1)
     });
-  } catch (error) {
-    console.error("Error en /login:", error);
-    return res.status(500).json({ error: "Error interno del servidor" });
-  }
-});
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Body inválido" });
+    }
+
+    try {
+      const email = parsed.data.email.toLowerCase();
+      const user = await User.findOne({ email });
+
+      if (!user || !user.isActive) {
+        return res.status(401).json({ error: "Credenciales inválidas" });
+      }
+
+      const ok = await bcrypt.compare(parsed.data.password, user.passwordHash);
+      if (!ok) {
+        return res.status(401).json({ error: "Credenciales inválidas" });
+      }
+
+      const payload = {
+        id: String(user._id),
+        email: user.email,
+        name: user.name,
+        role: user.role
+      };
+
+      const token = jwt.sign(
+        payload,
+        process.env.JWT_SECRET,
+        { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+      );
+
+      console.log("Usuario logueado:", payload);
+
+      return res.json({
+        ok: true,
+        token,
+        user: payload
+      });
+    } catch (error) {
+      console.error("Error en /login:", error);
+      return res.status(500).json({ error: "Error interno del servidor" });
+    }
+  });
 
   router.post("/logout", authMiddleware, (req, res) => {
     req.session.destroy(() => res.json({ ok: true }));
   });
 
-  router.get("/me", authMiddleware, (req, res) => {
-    console.log("Usuario autenticado:", req.session.user);
-    res.json({ user: req.session.user });
+  router.get("/me", authMiddleware, async (req, res) => {
+    return res.json({ ok: true, user: req.user });
   });
 
   return router;
