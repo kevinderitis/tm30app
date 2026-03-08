@@ -41,6 +41,7 @@ export function authRouter() {
   });
 
   router.get("/me", requireAuth, (req, res) => {
+    console.log("Usuario autenticado:", req.session.user);
     res.json({ user: req.session.user });
   });
 
