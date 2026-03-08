@@ -2,20 +2,29 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { User } from "../models/User.js";
-import { requireAuth } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
+import jwt from "jsonwebtoken";
+
 
 export function authRouter() {
   const router = express.Router();
 
-  router.post("/login", async (req, res) => {
-    console.log(req.get('origin'), req.get('referer'));
-    const schema = z.object({
-      email: z.string().email(),
-      password: z.string().min(1)
-    });
-    const parsed = schema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: "Body inválido" });
 
+
+router.post("/login", async (req, res) => {
+  console.log(req.get("origin"), req.get("referer"));
+
+  const schema = z.object({
+    email: z.string().email(),
+    password: z.string().min(1)
+  });
+
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Body inválido" });
+  }
+
+  try {
     const email = parsed.data.email.toLowerCase();
     const user = await User.findOne({ email });
 
@@ -24,23 +33,41 @@ export function authRouter() {
     }
 
     const ok = await bcrypt.compare(parsed.data.password, user.passwordHash);
-    if (!ok) return res.status(401).json({ error: "Credenciales inválidas" });
+    if (!ok) {
+      return res.status(401).json({ error: "Credenciales inválidas" });
+    }
 
-    req.session.user = {
+    const payload = {
       id: String(user._id),
       email: user.email,
       name: user.name,
       role: user.role
     };
-    console.log("Usuario logueado:", req.session.user);
-    res.json({ ok: true, user: req.session.user });
-  });
 
-  router.post("/logout", requireAuth, (req, res) => {
+    const token = jwt.sign(
+      payload,
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+    );
+
+    console.log("Usuario logueado:", payload);
+
+    return res.json({
+      ok: true,
+      token,
+      user: payload
+    });
+  } catch (error) {
+    console.error("Error en /login:", error);
+    return res.status(500).json({ error: "Error interno del servidor" });
+  }
+});
+
+  router.post("/logout", authMiddleware, (req, res) => {
     req.session.destroy(() => res.json({ ok: true }));
   });
 
-  router.get("/me", requireAuth, (req, res) => {
+  router.get("/me", authMiddleware, (req, res) => {
     console.log("Usuario autenticado:", req.session.user);
     res.json({ user: req.session.user });
   });

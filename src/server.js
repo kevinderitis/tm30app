@@ -1,8 +1,6 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import session from "express-session";
-import MongoStore from "connect-mongo";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -31,26 +29,6 @@ app.use(
 );
 
 app.use(express.json({ limit: "1mb" }));
-
-app.use(
-  session({
-    name: "tm30.sid",
-    secret: config.sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    rolling: true,
-    store: MongoStore.create({
-      mongoUrl: config.mongoUri,
-      ttl: config.sessionTtlDays * 24 * 60 * 60
-    }),
-    cookie: {
-      httpOnly: true,
-      secure: config.cookieSecure,
-      sameSite: config.cookieSameSite,
-      maxAge: config.sessionTtlDays * 24 * 60 * 60 * 1000
-    }
-  })
-);
 
 app.get("/health", (req, res) => res.json({ ok: true }));
 
