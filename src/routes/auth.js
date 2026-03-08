@@ -51,6 +51,7 @@ export function authRouter() {
       );
 
       console.log("Usuario logueado:", payload);
+      console.log("Token generado:", token);
 
       return res.json({
         ok: true,
