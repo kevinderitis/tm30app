@@ -2,11 +2,11 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { User } from "../models/User.js";
-import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { authMiddleware, requireAdmin } from "../middleware/auth.js";
 
 export function usersRouter() {
   const router = express.Router();
-  router.use(requireAuth, requireAdmin);
+  router.use(authMiddleware, requireAdmin);
 
   router.get("/", async (req, res) => {
     const users = await User.find()

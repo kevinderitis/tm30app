@@ -3,7 +3,7 @@ import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { requireAuth } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
 import { readMrzBestEffort } from "../services/ocr_mrz.js";
 import { Guest } from "../models/Guest.js";
 import { Stay } from "../models/Stay.js";
@@ -36,7 +36,7 @@ export function staysRouter({ uploadDir, exportDir }) {
   });
 
   const router = express.Router();
-  router.use(requireAuth);
+  router.use(authMiddleware);
 
   /**
    * POST /api/stays
