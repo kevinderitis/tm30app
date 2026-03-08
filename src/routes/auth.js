@@ -8,6 +8,7 @@ export function authRouter() {
   const router = express.Router();
 
   router.post("/login", async (req, res) => {
+    console.log(req.get('origin'), req.get('referer'));
     const schema = z.object({
       email: z.string().email(),
       password: z.string().min(1)
