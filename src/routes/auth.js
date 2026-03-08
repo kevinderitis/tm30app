@@ -68,6 +68,7 @@ export function authRouter() {
   });
 
   router.get("/me", authMiddleware, async (req, res) => {
+    console.log("Usuario autenticado:", req.user);
     return res.json({ ok: true, user: req.user });
   });
 
