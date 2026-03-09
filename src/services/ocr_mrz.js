@@ -18,6 +18,9 @@ export async function readMrzBestEffort(imageInput) {
     .resize({ width: 1800, withoutEnlargement: true })
     .toBuffer();
 
+
+  console.log("Base image prepared, size:", base.length);
+
   const variants = [];
   variants.push(base);
   variants.push(await sharp(base).threshold(160).toBuffer());
