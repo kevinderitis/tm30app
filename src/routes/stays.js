@@ -81,6 +81,10 @@ export function staysRouter({ uploadDir, exportDir }) {
 
         const best = await readMrzBestEffort(inputForMrz);
 
+        console.log("MRZ path:", mrzPath);
+        console.log("Full image path:", fullPath);
+        console.log("MRZ best effort result:", best);
+
         if (!best) {
           return res.status(422).json({
             error: "No se detectó MRZ. Pedí otra foto (MRZ completa, sin reflejos).",
