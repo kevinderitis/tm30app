@@ -1,7 +1,6 @@
 import sharp from "sharp";
 import { createWorker } from "tesseract.js";
 import { extractMrzLines, parseMrzTD3 } from "./mrz.js";
-import { cropLikelyMrzRegion } from "./mrz_crop.js";
 
 function scoreFromChecks(checks) {
   return (checks.passportNumberOk ? 1 : 0) + (checks.birthDateOk ? 1 : 0) + (checks.expiryOk ? 1 : 0);
@@ -12,12 +11,12 @@ async function recognize(worker, buffer) {
   return (data?.text || "").toUpperCase();
 }
 
-/**
- * Intenta leer MRZ con varias variantes (threshold/rotación/sharpen) y se queda con la mejor según check digits.
- * imageInput: path o buffer.
- */
 export async function readMrzBestEffort(imageInput) {
-  const base = await cropLikelyMrzRegion(imageInput);
+  const base = await sharp(imageInput)
+    .grayscale()
+    .normalize()
+    .resize({ width: 1800, withoutEnlargement: true })
+    .toBuffer();
 
   const variants = [];
   variants.push(base);
@@ -55,7 +54,7 @@ export async function readMrzBestEffort(imageInput) {
       }
     }
 
-    return best; // null o {score,data,l1,l2}
+    return best;
   } finally {
     await worker.terminate();
   }
