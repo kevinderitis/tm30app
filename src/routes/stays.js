@@ -149,34 +149,68 @@ export function staysRouter({ uploadDir, exportDir }) {
   );
 
   router.get("/stays", async (req, res) => {
-    const date = String(req.query.date || todayIsoDate());
+    try {
+      console.log("Query params stays:", req.query);
 
-    const stays = await Stay.find({ checkInDate: date })
-      .sort({ createdAt: -1 })
-      .populate("guestId")
-      .lean();
+      const date = String(req.query.date || todayIsoDate());
 
-    res.json({
-      date,
-      stays: stays.map((s) => ({
-        id: String(s._id),
-        status: s.status,
-        checkInDate: s.checkInDate,
-        checkOutDate: s.checkOutDDMMYYYY,
-        phoneNo: s.phoneNo,
-        mrzScore: s.mrzScore || 0,
-        guest: {
-          id: String(s.guestId._id),
-          passportNo: s.guestId.passportNo,
-          firstName: s.guestId.firstName,
-          middleName: s.guestId.middleName,
-          lastName: s.guestId.lastName,
-          gender: s.guestId.gender,
-          nationality: s.guestId.nationality,
-          birthDate: s.guestId.birthDateDDMMYYYY
-        }
-      }))
-    });
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+      if (!dateRegex.test(date)) {
+        return res.status(400).json({
+          error: "Formato de fecha inválido. Debe ser YYYY-MM-DD"
+        });
+      }
+
+      const stays = await Stay.find({ checkInDate: date })
+        .sort({ createdAt: -1 })
+        .populate("guestId")
+        .lean();
+
+      if (!stays || stays.length === 0) {
+        return res.json({
+          date,
+          stays: []
+        });
+      }
+
+      const formatted = stays.map((s) => {
+        const guest = s.guestId || {};
+
+        return {
+          id: String(s._id),
+          status: s.status,
+          checkInDate: s.checkInDate,
+          checkOutDate: s.checkOutDDMMYYYY,
+          phoneNo: s.phoneNo,
+          mrzScore: s.mrzScore || 0,
+          guest: guest._id
+            ? {
+              id: String(guest._id),
+              passportNo: guest.passportNo,
+              firstName: guest.firstName,
+              middleName: guest.middleName,
+              lastName: guest.lastName,
+              gender: guest.gender,
+              nationality: guest.nationality,
+              birthDate: guest.birthDateDDMMYYYY
+            }
+            : null
+        };
+      });
+
+      res.json({
+        date,
+        stays: formatted
+      });
+
+    } catch (error) {
+      console.error("Error en /stays:", error);
+
+      res.status(500).json({
+        error: "Error interno del servidor"
+      });
+    }
   });
 
   router.patch("/stays/:id", async (req, res) => {
