@@ -76,8 +76,8 @@ export function staysRouter({ uploadDir, exportDir }) {
       const fullPath = fullFile?.path || "";
 
       try {
-        // Preferimos el recorte MRZ del frontend si existe
-        const inputForMrz = mrzPath || fullPath;
+        // const inputForMrz = mrzPath || fullPath;
+        const inputForMrz = fullPath || mrzPath;
 
         const best = await readMrzBestEffort(inputForMrz);
 
