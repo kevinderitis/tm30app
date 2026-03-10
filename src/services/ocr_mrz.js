@@ -39,7 +39,11 @@ export async function readMrzBestEffort(imageInput) {
 
     for (const v of variants) {
       const text = await recognize(worker, v);
+      console.log("OCR text:", text);
+
       const mrz = extractMrzLines(text);
+      console.log("Detected MRZ:", mrz);
+
       if (!mrz) continue;
 
       const [l1, l2] = mrz;
@@ -48,12 +52,15 @@ export async function readMrzBestEffort(imageInput) {
         const data = parseMrzTD3(l1, l2);
         const score = scoreFromChecks(data.checks);
 
+        console.log("Parsed data:", data);
+        console.log("Score:", score);
+
         if (!best || score > best.score) {
           best = { score, data, l1, l2 };
         }
         if (score === 3) break;
-      } catch {
-        // ignore
+      } catch (err) {
+        console.log("Parse error:", err.message);
       }
     }
 
