@@ -80,15 +80,34 @@ function scoreFromChecks(checks) {
     (checks.expiryOk ? 1 : 0);
 }
 
-function countChar(str, ch) {
-  return (str.match(new RegExp(`\\${ch}`, "g")) || []).length;
-}
-
 function cleanOcrText(text) {
   return (text || "")
     .toUpperCase()
     .replace(/\r/g, "")
     .replace(/[^\nA-Z0-9< ]/g, "");
+}
+
+function countChar(str, ch) {
+  return (str.match(new RegExp(`\\${ch}`, "g")) || []).length;
+}
+
+function looksLikeLine1(line) {
+  const s = (line || "").replace(/\s/g, "");
+  return (
+    s.includes("<") &&
+    (
+      s.startsWith("P<") ||
+      s.startsWith("IP<") ||
+      s.startsWith("PC") ||
+      s.startsWith("PARG") ||
+      s.startsWith("ARG")
+    )
+  );
+}
+
+function looksLikeLine2(line) {
+  const s = (line || "").replace(/\s/g, "");
+  return /\d{6}/.test(s);
 }
 
 function normalizeLine1(line) {
@@ -97,32 +116,22 @@ function normalizeLine1(line) {
     .replace(/\s/g, "")
     .replace(/[^A-Z0-9<]/g, "");
 
-  // arreglos comunes al inicio
+  // arreglos prefijo
   s = s.replace(/^IP</, "P<");
   s = s.replace(/^1P</, "P<");
   s = s.replace(/^LP</, "P<");
+  s = s.replace(/^PCARG/, "P<ARG");
   s = s.replace(/^PARG/, "P<ARG");
+  s = s.replace(/^ARG/, "P<ARG");
 
-  // letras mal leídas como separadores
+  // separadores
+  s = s.replace(/<<+/g, "<<");
   s = s.replace(/<K</g, "<<<");
   s = s.replace(/<C</g, "<<<");
   s = s.replace(/<L</g, "<<<");
-  s = s.replace(/K<K/g, "<<");
-  s = s.replace(/C<C/g, "<<");
-  s = s.replace(/L<L/g, "<<");
 
-  s = s.replace(/K/g, "<");
-  s = s.replace(/C/g, "<");
-  s = s.replace(/L/g, "<");
-  s = s.replace(/I/g, "<");
-
-  // colapsar separadores largos
+  // colapsar relleno
   s = s.replace(/<{3,}/g, "<<<<<<");
-
-  // asegurar prefijo de pasaporte
-  if (!s.startsWith("P<")) {
-    s = "P<" + s.replace(/^P*/, "");
-  }
 
   return s.padEnd(44, "<").slice(0, 44);
 }
@@ -133,12 +142,13 @@ function normalizeLine2(line) {
     .replace(/\s/g, "")
     .replace(/[^A-Z0-9<]/g, "");
 
-  // errores típicos OCR
+  // correcciones OCR comunes
   s = s.replace(/O/g, "0");
   s = s.replace(/I/g, "1");
   s = s.replace(/Z/g, "2");
   s = s.replace(/S/g, "5");
   s = s.replace(/B/g, "8");
+  s = s.replace(/G(?=\d)/g, "6");
 
   return s.padEnd(44, "<").slice(0, 44);
 }
@@ -149,55 +159,70 @@ function line1QualityScore(l1) {
   if (l1.startsWith("P<")) score += 2;
 
   const separators = countChar(l1, "<");
+
   if (separators >= 8) score += 2;
   if (separators >= 12) score += 1;
 
-  // penalizar si casi no hay letras reales de nombres
   const letters = (l1.replace(/[^A-Z]/g, "") || "").length;
   if (letters >= 8) score += 1;
 
   return score;
 }
 
-function totalScore(data, l1) {
-  return scoreFromChecks(data.checks) * 10 + line1QualityScore(l1);
+function totalScore(data, l1, l2) {
+  return (
+    scoreFromChecks(data.checks) * 100 +
+    line1QualityScore(l1) * 5 +
+    (l2.includes("ARG") ? 5 : 0)
+  );
 }
 
-async function recognize(worker, buffer) {
-  const { data } = await worker.recognize(buffer);
-  return cleanOcrText(data?.text || "");
-}
-
-async function runPass(worker, buffer, whitelist) {
+async function recognize(worker, buffer, whitelist) {
   await worker.setParameters({
     tessedit_char_whitelist: whitelist,
     preserve_interword_spaces: "1"
   });
 
-  return await recognize(worker, buffer);
+  const { data } = await worker.recognize(buffer);
+  return cleanOcrText(data?.text || "");
 }
 
 function mergeMrzCandidates(textGeneral, textNames) {
-  const mrzGeneral = extractMrzLines(textGeneral);
-  const mrzNames = extractMrzLines(textNames);
+  const allLines = [textGeneral, textNames]
+    .flatMap(t => (t || "").split(/\n/))
+    .map(l => l.toUpperCase().replace(/\s/g, "").trim())
+    .filter(Boolean)
+    .filter(l => l.length >= 20);
 
-  if (!mrzGeneral && !mrzNames) return null;
+  let bestLine1 = null;
+  let bestLine2 = null;
 
-  if (mrzGeneral && !mrzNames) {
-    const [l1, l2] = mrzGeneral;
-    return [normalizeLine1(l1), normalizeLine2(l2)];
+  for (const line of allLines) {
+    if (!bestLine1 && looksLikeLine1(line)) {
+      bestLine1 = line;
+      continue;
+    }
+
+    if (!bestLine2 && looksLikeLine2(line)) {
+      bestLine2 = line;
+    }
   }
 
-  if (!mrzGeneral && mrzNames) {
-    const [l1, l2] = mrzNames;
-    return [normalizeLine1(l1), normalizeLine2(l2)];
+  // fallbacks
+  if (!bestLine1) {
+    bestLine1 = allLines.find(l => l.includes("<"));
   }
 
-  // combinar: línea 1 de pasada "nombres", línea 2 de pasada general
-  const [l1Names] = mrzNames;
-  const [, l2General] = mrzGeneral;
+  if (!bestLine2) {
+    bestLine2 = allLines.find(l => /\d{6}/.test(l));
+  }
 
-  return [normalizeLine1(l1Names), normalizeLine2(l2General)];
+  if (!bestLine1 || !bestLine2) return null;
+
+  return [
+    normalizeLine1(bestLine1),
+    normalizeLine2(bestLine2)
+  ];
 }
 
 export async function readMrzBestEffort(imageInput) {
@@ -231,15 +256,13 @@ export async function readMrzBestEffort(imageInput) {
     let best = null;
 
     for (const v of variants) {
-      // pasada general
-      const textGeneral = await runPass(
+      const textGeneral = await recognize(
         worker,
         v,
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<"
       );
 
-      // pasada enfocada en nombres / separadores
-      const textNames = await runPass(
+      const textNames = await recognize(
         worker,
         v,
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ<"
@@ -249,6 +272,7 @@ export async function readMrzBestEffort(imageInput) {
       console.log("OCR names:", textNames);
 
       const mrz = mergeMrzCandidates(textGeneral, textNames);
+
       console.log("Merged MRZ:", mrz);
 
       if (!mrz) continue;
@@ -257,7 +281,8 @@ export async function readMrzBestEffort(imageInput) {
 
       try {
         const data = parseMrzTD3(l1, l2);
-        const score = totalScore(data, l1);
+
+        const score = totalScore(data, l1, l2);
 
         console.log("Parsed data:", data);
         console.log("Final score:", score);
@@ -266,8 +291,7 @@ export async function readMrzBestEffort(imageInput) {
           best = { score, data, l1, l2 };
         }
 
-        // ya está perfecto en checks y la línea 1 parece sana
-        if (score >= 35) break;
+        if (score >= 300) break;
       } catch (err) {
         console.log("Parse error:", err.message);
       }
