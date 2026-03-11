@@ -192,7 +192,7 @@ export function staysRouter({ uploadDir, exportDir }) {
         READ MRZ (prefer MRZ image)
         ----------------------------- */
 
-        const mrzResult = await readMrzBestEffort(mrzPath || fullPath);
+        const mrzResult = await readMrzBestEffort(mrzPath);
 
         console.log("MRZ path:", mrzPath);
         console.log("Full image path:", fullPath);
