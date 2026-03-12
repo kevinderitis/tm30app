@@ -312,13 +312,13 @@ function parseTd3(line1, line2) {
       /^\d$/.test(finalCheck) &&
       checksum(
         passportNoField +
-          passportCheck +
-          birthDate +
-          birthCheck +
-          expiry +
-          expiryCheck +
-          personalNumber +
-          personalCheck
+        passportCheck +
+        birthDate +
+        birthCheck +
+        expiry +
+        expiryCheck +
+        personalNumber +
+        personalCheck
       ) === finalCheck
   };
 
@@ -503,12 +503,15 @@ async function buildImageVariants(imageInput) {
 }
 
 async function runOcr(worker, buffer, psm) {
-  const { data } = await worker.recognize(buffer, {
+  await worker.setParameters({
     tessedit_pageseg_mode: String(psm),
     tessedit_char_whitelist: MRZ_CHARS,
-    preserve_interword_spaces: "0"
+    preserve_interword_spaces: "0",
+    load_system_dawg: "0",
+    load_freq_dawg: "0"
   });
 
+  const { data } = await worker.recognize(buffer);
   return data?.text || "";
 }
 
@@ -540,13 +543,13 @@ function toApiResult(parsed) {
 }
 
 export async function readMrzBestEffort(imageInput) {
-  const worker = await createWorker("eng");
+  const worker = await createWorker("eng", 1);
   let best = null;
   const debugSamples = [];
 
   try {
     const variants = await buildImageVariants(imageInput);
-    const psms = [6, 11, 12];
+    const psms = [6, 7, 13];
 
     for (const variant of variants) {
       for (const psm of psms) {
