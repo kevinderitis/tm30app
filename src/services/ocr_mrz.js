@@ -447,10 +447,12 @@ async function buildImageVariants(imageInput) {
 
   const regionSpecs = [
     null,
+    { top: 0.50, h: 0.40 },
     { top: 0.55, h: 0.35 },
     { top: 0.60, h: 0.30 },
     { top: 0.65, h: 0.25 },
-    { top: 0.70, h: 0.20 }
+    { top: 0.70, h: 0.20 },
+    { top: 0.75, h: 0.20 }
   ];
 
   const results = [];
@@ -491,10 +493,10 @@ async function buildImageVariants(imageInput) {
       await sharp(base).threshold(175).toBuffer(),
       await sharp(base).sharpen().toBuffer(),
       await sharp(base).normalize().sharpen().toBuffer(),
-      await sharp(base).rotate(-1, { background: "#000" }).toBuffer(),
-      await sharp(base).rotate(1, { background: "#000" }).toBuffer(),
-      await sharp(base).rotate(-2, { background: "#000" }).toBuffer(),
-      await sharp(base).rotate(2, { background: "#000" }).toBuffer()
+      await sharp(base).rotate(-1, { background: "#ffffff" }).toBuffer(),
+      await sharp(base).rotate(1, { background: "#ffffff" }).toBuffer(),
+      await sharp(base).rotate(-2, { background: "#ffffff" }).toBuffer(),
+      await sharp(base).rotate(2, { background: "#ffffff" }).toBuffer()
     ];
 
     for (const v of variants) results.push(v);
@@ -542,7 +544,7 @@ function toApiResult(parsed) {
 }
 
 export async function readMrzBestEffort(imageInput) {
-  const worker = await createWorker("eng", 1);
+  const worker = await createWorker("eng");
   let best = null;
   const debugSamples = [];
 

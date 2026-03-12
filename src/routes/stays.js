@@ -85,7 +85,13 @@ export function staysRouter({ uploadDir, exportDir }) {
 
         const data = best.data;
         const warnings = [];
-        if (best.score < 3) warnings.push(`mrz_low_confidence_score_${best.score}`);
+        if (
+          !best.data.checks.passportNumberOk ||
+          !best.data.checks.birthDateOk ||
+          !best.data.checks.expiryOk
+        ) {
+          warnings.push("mrz_low_confidence");
+        }
 
         const passportNo = data.passportNo.trim();
 
