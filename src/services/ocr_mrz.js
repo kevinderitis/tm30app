@@ -460,7 +460,7 @@ async function buildImageVariants(imageInput) {
 
     if (!region) {
       base = await sharp(imageBuffer)
-        .resize({ width: 2400, withoutEnlargement: true })
+        .resize({ width: 2400, withoutEnlargement: false })
         .grayscale()
         .normalize()
         .toBuffer();
@@ -468,7 +468,7 @@ async function buildImageVariants(imageInput) {
       const top = Math.max(0, Math.floor(height * region.top));
       const cropHeight = Math.min(height - top, Math.floor(height * region.h));
 
-      if (cropHeight < 40) continue;
+      if (cropHeight < 80) continue;
 
       base = await sharp(imageBuffer)
         .extract({
@@ -477,7 +477,7 @@ async function buildImageVariants(imageInput) {
           width,
           height: cropHeight
         })
-        .resize({ width: 2400, withoutEnlargement: true })
+        .resize({ width: 2400, withoutEnlargement: false })
         .grayscale()
         .normalize()
         .toBuffer();
@@ -485,6 +485,7 @@ async function buildImageVariants(imageInput) {
 
     const variants = [
       base,
+      await sharp(base).median(1).toBuffer(),
       await sharp(base).threshold(135).toBuffer(),
       await sharp(base).threshold(155).toBuffer(),
       await sharp(base).threshold(175).toBuffer(),
@@ -506,9 +507,7 @@ async function runOcr(worker, buffer, psm) {
   await worker.setParameters({
     tessedit_pageseg_mode: String(psm),
     tessedit_char_whitelist: MRZ_CHARS,
-    preserve_interword_spaces: "0",
-    load_system_dawg: "0",
-    load_freq_dawg: "0"
+    preserve_interword_spaces: "0"
   });
 
   const { data } = await worker.recognize(buffer);
