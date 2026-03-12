@@ -506,13 +506,12 @@ async function buildImageVariants(imageInput) {
 }
 
 async function runOcr(worker, buffer, psm) {
-  await worker.setParameters({
+  const { data } = await worker.recognize(buffer, {
     tessedit_pageseg_mode: String(psm),
     tessedit_char_whitelist: MRZ_CHARS,
     preserve_interword_spaces: "0"
   });
 
-  const { data } = await worker.recognize(buffer);
   return data?.text || "";
 }
 
@@ -553,7 +552,7 @@ export async function readMrzBestEffort(imageInput) {
 
   try {
     const variants = await buildImageVariants(imageInput);
-    const psms = [6, 7, 13];
+    const psms = [6, 11, 12];
 
     for (const variant of variants) {
       for (const psm of psms) {
