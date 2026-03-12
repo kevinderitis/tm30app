@@ -38,120 +38,6 @@ export function staysRouter({ uploadDir, exportDir }) {
   const router = express.Router();
   router.use(authMiddleware);
 
-  /**
-   * POST /api/stays
-   * multipart/form-data:
-   * - passportImageMrz (file)  (recomendado: recorte MRZ desde frontend)
-   * - passportImageFull (file) (opcional)
-   * - checkOutDate (DD/MM/YYYY) [requerido]
-   * - phoneNo (opcional)
-   * - checkInDate (opcional YYYY-MM-DD)
-   */
-  // router.post(
-  //   "/stays",
-  //   upload.fields([
-  //     { name: "passportImageMrz", maxCount: 1 },
-  //     { name: "passportImageFull", maxCount: 1 }
-  //   ]),
-  //   async (req, res) => {
-  //     const schema = z.object({
-  //       checkOutDate: z.string().min(8),
-  //       phoneNo: z.string().optional(),
-  //       checkInDate: z.string().optional()
-  //     });
-
-  //     const parsed = schema.safeParse(req.body);
-  //     if (!parsed.success) {
-  //       return res.status(400).json({ error: "Body inválido", details: parsed.error.flatten() });
-  //     }
-
-  //     const mrzFile = req.files?.passportImageMrz?.[0];
-  //     const fullFile = req.files?.passportImageFull?.[0];
-
-  //     if (!mrzFile && !fullFile) {
-  //       return res.status(400).json({ error: "Subí passportImageMrz o passportImageFull" });
-  //     }
-
-  //     const mrzPath = mrzFile?.path || "";
-  //     const fullPath = fullFile?.path || "";
-
-  //     try {
-  //       // const inputForMrz = mrzPath || fullPath;
-  //       const inputForMrz = fullPath || mrzPath;
-
-  //       const best = await readMrzBestEffort(inputForMrz);
-
-  //       console.log("MRZ path:", mrzPath);
-  //       console.log("Full image path:", fullPath);
-  //       console.log("MRZ best effort result:", best);
-
-  //       if (!best) {
-  //         return res.status(422).json({
-  //           error: "No se detectó MRZ. Pedí otra foto (MRZ completa, sin reflejos).",
-  //           mrzImage: mrzFile ? path.basename(mrzPath) : null,
-  //           fullImage: fullFile ? path.basename(fullPath) : null
-  //         });
-  //       }
-
-  //       const data = best.data;
-  //       const warnings = [];
-  //       if (best.score < 3) warnings.push(`mrz_low_confidence_score_${best.score}`);
-
-  //       const passportNo = data.passportNo.trim();
-
-  //       let guest = await Guest.findOne({ passportNo });
-  //       if (!guest) {
-  //         guest = await Guest.create({
-  //           passportNo,
-  //           firstName: data.firstName,
-  //           middleName: data.middleName || "",
-  //           lastName: data.lastName || "",
-  //           gender: data.gender || "",
-  //           nationality: data.nationality || "",
-  //           birthDateDDMMYYYY: data.birthDateDDMMYYYY || ""
-  //         });
-  //       }
-
-  //       const checkInDate = parsed.data.checkInDate || todayIsoDate();
-
-  //       const stay = await Stay.create({
-  //         guestId: guest._id,
-  //         checkInDate,
-  //         checkOutDDMMYYYY: parsed.data.checkOutDate,
-  //         phoneNo: parsed.data.phoneNo || "",
-  //         passportImageMrzPath: mrzPath,
-  //         passportImageFullPath: fullPath,
-  //         mrzScore: best.score,
-  //         mrzLine1: best.l1,
-  //         mrzLine2: best.l2,
-  //         status: "draft",
-  //         createdBy: req.session.user.id
-  //       });
-
-  //       res.status(201).json({
-  //         stayId: String(stay._id),
-  //         guest: {
-  //           guestId: String(guest._id),
-  //           passportNo: guest.passportNo,
-  //           firstName: guest.firstName,
-  //           middleName: guest.middleName,
-  //           lastName: guest.lastName,
-  //           gender: guest.gender,
-  //           nationality: guest.nationality,
-  //           birthDate: guest.birthDateDDMMYYYY
-  //         },
-  //         checkInDate,
-  //         checkOutDate: stay.checkOutDDMMYYYY,
-  //         phoneNo: stay.phoneNo,
-  //         mrzScore: best.score,
-  //         warnings
-  //       });
-  //     } catch (e) {
-  //       res.status(500).json({ error: "Error procesando imagen", details: e.message });
-  //     }
-  //   }
-  // );
-
   router.post(
     "/stays",
     upload.fields([
@@ -166,39 +52,31 @@ export function staysRouter({ uploadDir, exportDir }) {
       });
 
       const parsed = schema.safeParse(req.body);
-
       if (!parsed.success) {
-        return res.status(400).json({
-          error: "Body inválido",
-          details: parsed.error.flatten()
-        });
+        return res.status(400).json({ error: "Body inválido", details: parsed.error.flatten() });
       }
 
       const mrzFile = req.files?.passportImageMrz?.[0];
       const fullFile = req.files?.passportImageFull?.[0];
 
       if (!mrzFile && !fullFile) {
-        return res.status(400).json({
-          error: "Subí passportImageMrz o passportImageFull"
-        });
+        return res.status(400).json({ error: "Subí passportImageMrz o passportImageFull" });
       }
 
       const mrzPath = mrzFile?.path || "";
       const fullPath = fullFile?.path || "";
 
       try {
+        // const inputForMrz = mrzPath || fullPath;
+        const inputForMrz = fullPath || mrzPath;
 
-        /* -----------------------------
-        READ MRZ (prefer MRZ image)
-        ----------------------------- */
-
-        const mrzResult = await readMrzBestEffort(mrzPath);
+        const best = await readMrzBestEffort(inputForMrz);
 
         console.log("MRZ path:", mrzPath);
         console.log("Full image path:", fullPath);
-        console.log("MRZ result:", mrzResult);
+        console.log("MRZ best effort result:", best);
 
-        if (!mrzResult) {
+        if (!best) {
           return res.status(422).json({
             error: "No se detectó MRZ. Pedí otra foto (MRZ completa, sin reflejos).",
             mrzImage: mrzFile ? path.basename(mrzPath) : null,
@@ -206,62 +84,13 @@ export function staysRouter({ uploadDir, exportDir }) {
           });
         }
 
-        /* -----------------------------
-        READ NAMES FROM FULL IMAGE
-        ----------------------------- */
-
-        let visualNames = null;
-
-        if (fullPath) {
-          try {
-            visualNames = await readPassportNamesFromVisualZone(fullPath);
-          } catch (err) {
-            console.log("Visual OCR failed:", err.message);
-          }
-        }
-
-        /* -----------------------------
-        MERGE DATA
-        ----------------------------- */
-
-        const mrzData = mrzResult.data;
-
-        const data = {
-          passportNo: mrzData.passportNo,
-          nationality: mrzData.nationality,
-          birthDateDDMMYYYY: mrzData.birthDateDDMMYYYY,
-          gender: mrzData.gender,
-
-          firstName:
-            visualNames?.firstName ||
-            mrzData.firstName ||
-            "",
-
-          middleName:
-            visualNames?.middleName ||
-            mrzData.middleName ||
-            "",
-
-          lastName:
-            visualNames?.lastName ||
-            mrzData.lastName ||
-            ""
-        };
-
+        const data = best.data;
         const warnings = [];
-
-        if (mrzResult.score < 3) {
-          warnings.push(`mrz_low_confidence_score_${mrzResult.score}`);
-        }
+        if (best.score < 3) warnings.push(`mrz_low_confidence_score_${best.score}`);
 
         const passportNo = data.passportNo.trim();
 
-        /* -----------------------------
-        FIND OR CREATE GUEST
-        ----------------------------- */
-
         let guest = await Guest.findOne({ passportNo });
-
         if (!guest) {
           guest = await Guest.create({
             passportNo,
@@ -274,12 +103,7 @@ export function staysRouter({ uploadDir, exportDir }) {
           });
         }
 
-        const checkInDate =
-          parsed.data.checkInDate || todayIsoDate();
-
-        /* -----------------------------
-        CREATE STAY
-        ----------------------------- */
+        const checkInDate = parsed.data.checkInDate || todayIsoDate();
 
         const stay = await Stay.create({
           guestId: guest._id,
@@ -288,9 +112,9 @@ export function staysRouter({ uploadDir, exportDir }) {
           phoneNo: parsed.data.phoneNo || "",
           passportImageMrzPath: mrzPath,
           passportImageFullPath: fullPath,
-          mrzScore: mrzResult.score,
-          mrzLine1: mrzResult.l1,
-          mrzLine2: mrzResult.l2,
+          mrzScore: best.score,
+          mrzLine1: best.l1,
+          mrzLine2: best.l2,
           status: "draft",
           createdBy: req.session.user.id
         });
@@ -310,20 +134,16 @@ export function staysRouter({ uploadDir, exportDir }) {
           checkInDate,
           checkOutDate: stay.checkOutDDMMYYYY,
           phoneNo: stay.phoneNo,
-          mrzScore: mrzResult.score,
+          mrzScore: best.score,
           warnings
         });
-
       } catch (e) {
-        console.error(e);
-
-        res.status(500).json({
-          error: "Error procesando imagen",
-          details: e.message
-        });
+        res.status(500).json({ error: "Error procesando imagen", details: e.message });
       }
     }
   );
+
+
 
   router.get("/stays", async (req, res) => {
     try {
