@@ -548,6 +548,9 @@ export async function readMrzBestEffort(imageInput) {
   let best = null;
   const debugSamples = [];
 
+  const meta = await sharp(imageInput).metadata();
+  console.log("Input image size:", meta.width, meta.height);
+
   try {
     const variants = await buildImageVariants(imageInput);
     const psms = [6, 7, 13];

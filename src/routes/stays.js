@@ -51,6 +51,8 @@ export function staysRouter({ uploadDir, exportDir }) {
         checkInDate: z.string().optional()
       });
 
+      console.log("Received /stays POST with body:", req.body);
+
       const parsed = schema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Body inválido", details: parsed.error.flatten() });
