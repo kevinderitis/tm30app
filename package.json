@@ -8,6 +8,7 @@
     "dev": "node --watch src/server.js"
   },
   "dependencies": {
+    "@google-cloud/vision": "^5.3.4",
     "bcryptjs": "^2.4.3",
     "connect-mongo": "^5.1.0",
     "cors": "^2.8.5",
@@ -18,9 +19,9 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.7.1",
+    "mrz": "^5.0.2",
     "multer": "^1.4.5-lts.1",
     "sharp": "^0.33.5",
-    "tesseract.js": "^5.1.1",
     "zod": "^3.23.8"
   }
 }

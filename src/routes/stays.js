@@ -36,7 +36,7 @@ export function staysRouter({ uploadDir, exportDir }) {
   });
 
   const router = express.Router();
-  router.use(authMiddleware);
+  // router.use(authMiddleware);
 
   router.post(
     "/stays",
@@ -85,28 +85,27 @@ export function staysRouter({ uploadDir, exportDir }) {
           });
         }
 
-        const data = best.data;
         const warnings = [];
         if (
-          !best.data.checks.passportNumberOk ||
-          !best.data.checks.birthDateOk ||
-          !best.data.checks.expiryOk
+          !best.checks.passport ||
+          !best.checks.birth ||
+          !best.checks.expiry
         ) {
           warnings.push("mrz_low_confidence");
         }
 
-        const passportNo = data.passportNo.trim();
+        const passportNo = best.passportNo.trim();
 
         let guest = await Guest.findOne({ passportNo });
         if (!guest) {
           guest = await Guest.create({
             passportNo,
-            firstName: data.firstName,
-            middleName: data.middleName || "",
-            lastName: data.lastName || "",
-            gender: data.gender || "",
-            nationality: data.nationality || "",
-            birthDateDDMMYYYY: data.birthDateDDMMYYYY || ""
+            firstName: best.firstName,
+            middleName: best.middleName || "",
+            lastName: best.lastName || "",
+            gender: best.sex || "",
+            nationality: best.nationality || "",
+            birthDateDDMMYYYY: best.birthDateIso || ""
           });
         }
 
@@ -123,7 +122,7 @@ export function staysRouter({ uploadDir, exportDir }) {
           mrzLine1: best.l1,
           mrzLine2: best.l2,
           status: "draft",
-          createdBy: req.session.user.id
+          createdBy: 'user_upload' // opcional, para saber que fue creado por esta ruta
         });
 
         res.status(201).json({
