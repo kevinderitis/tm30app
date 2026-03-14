@@ -100,14 +100,26 @@ export function staysRouter({ uploadDir, exportDir }) {
 
         const passportNo = (data.passportNo || "").trim();
 
+        const normalizedGender =
+          data.gender === "male" ? "M" :
+            data.gender === "female" ? "F" :
+              data.gender === "M" ? "M" :
+                data.gender === "F" ? "F" :
+                  "";
+
+        const fullFirstName = (data.firstName || "").trim();
+        const nameParts = fullFirstName.split(/\s+/).filter(Boolean);
+        const normalizedFirstName = nameParts[0] || "";
+        const normalizedMiddleName = data.middleName || nameParts.slice(1).join(" ");
+
         let guest = await Guest.findOne({ passportNo });
         if (!guest) {
           guest = await Guest.create({
             passportNo,
-            firstName: data.firstName,
-            middleName: data.middleName || "",
+            firstName: normalizedFirstName,
+            middleName: normalizedMiddleName,
             lastName: data.lastName || "",
-            gender: data.gender || "",
+            gender: normalizedGender,
             nationality: data.nationality || "",
             birthDateDDMMYYYY: data.birthDateDDMMYYYY || ""
           });
@@ -119,7 +131,6 @@ export function staysRouter({ uploadDir, exportDir }) {
           guestId: guest._id,
           checkInDate,
           checkOutDDMMYYYY: parsed.data.checkOutDate,
-          phoneNo: parsed.data.phoneNo || "",
           passportImageMrzPath: mrzPath,
           passportImageFullPath: fullPath,
           mrzScore: best.score,

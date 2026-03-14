@@ -4,8 +4,7 @@ const StaySchema = new mongoose.Schema(
   {
     guestId: { type: mongoose.Schema.Types.ObjectId, ref: "Guest", required: true },
     checkInDate: { type: String, required: true }, // YYYY-MM-DD
-    checkOutDDMMYYYY: { type: String, required: true }, // DD/MM/YYYY
-    phoneNo: { type: String, default: "" },
+    checkOutDDMMYYYY: { type: String, required: true },
 
     // imágenes
     passportImageMrzPath: { type: String, default: "" },  // recorte MRZ (preferido)
@@ -17,7 +16,7 @@ const StaySchema = new mongoose.Schema(
     mrzLine2: { type: String, default: "" },
 
     status: { type: String, enum: ["draft", "confirmed", "exported"], default: "draft" },
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }
+    createdBy: { type: String }
   },
   { timestamps: true }
 );
