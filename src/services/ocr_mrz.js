@@ -1,3 +1,4 @@
+import fs from "fs";
 import vision from "@google-cloud/vision";
 import { parse } from "mrz";
 
@@ -20,12 +21,10 @@ function extractMrzLinesFromText(fullText = "") {
 
   if (lines.length < 2) return null;
 
-  // normalmente las 2 últimas líneas válidas son la MRZ
   return lines.slice(-2);
 }
 
 function formatBirthDateDDMMYYYY(dateValue = "") {
-  // si parse devuelve YYMMDD
   if (/^\d{6}$/.test(dateValue)) {
     const yy = Number(dateValue.slice(0, 2));
     const mm = dateValue.slice(2, 4);
@@ -34,7 +33,6 @@ function formatBirthDateDDMMYYYY(dateValue = "") {
     return `${dd}/${mm}/${yyyy}`;
   }
 
-  // si parse devuelve YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
     const [yyyy, mm, dd] = dateValue.split("-");
     return `${dd}/${mm}/${yyyy}`;
@@ -84,7 +82,13 @@ function toApiResult(parsed, mrzLines, rawText) {
 
 export async function readMrzBestEffort(imageInput) {
   try {
-    const [result] = await client.textDetection(imageInput);
+    const imageBytes = fs.readFileSync(imageInput);
+
+    console.log("Google Vision: processing image with size", imageBytes.length);
+
+    const [result] = await client.textDetection({
+      image: { content: imageBytes.toString("base64") }
+    });
 
     const fullText = result?.textAnnotations?.[0]?.description || "";
 

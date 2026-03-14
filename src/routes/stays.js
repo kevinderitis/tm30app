@@ -69,7 +69,9 @@ export function staysRouter({ uploadDir, exportDir }) {
       const fullPath = fullFile?.path || "";
 
       try {
-        const inputForMrz = mrzPath || fullPath;
+        const inputForMrz = fullPath || mrzPath;
+
+        console.log("Processing image for MRZ:", inputForMrz);
 
         const best = await readMrzBestEffort(inputForMrz);
 
@@ -85,27 +87,29 @@ export function staysRouter({ uploadDir, exportDir }) {
           });
         }
 
-        const warnings = [];
+        const data = best.data;
+        const warnings = [...(best.warnings || [])];
+
         if (
-          !best.checks.passport ||
-          !best.checks.birth ||
-          !best.checks.expiry
+          !data.checks.passportNumberOk ||
+          !data.checks.birthDateOk ||
+          !data.checks.expiryOk
         ) {
           warnings.push("mrz_low_confidence");
         }
 
-        const passportNo = best.passportNo.trim();
+        const passportNo = (data.passportNo || "").trim();
 
         let guest = await Guest.findOne({ passportNo });
         if (!guest) {
           guest = await Guest.create({
             passportNo,
-            firstName: best.firstName,
-            middleName: best.middleName || "",
-            lastName: best.lastName || "",
-            gender: best.sex || "",
-            nationality: best.nationality || "",
-            birthDateDDMMYYYY: best.birthDateIso || ""
+            firstName: data.firstName,
+            middleName: data.middleName || "",
+            lastName: data.lastName || "",
+            gender: data.gender || "",
+            nationality: data.nationality || "",
+            birthDateDDMMYYYY: data.birthDateDDMMYYYY || ""
           });
         }
 
@@ -122,7 +126,7 @@ export function staysRouter({ uploadDir, exportDir }) {
           mrzLine1: best.l1,
           mrzLine2: best.l2,
           status: "draft",
-          createdBy: 'user_upload' // opcional, para saber que fue creado por esta ruta
+          createdBy: "user_upload"
         });
 
         res.status(201).json({
@@ -148,7 +152,6 @@ export function staysRouter({ uploadDir, exportDir }) {
       }
     }
   );
-
 
 
   router.get("/stays", async (req, res) => {
