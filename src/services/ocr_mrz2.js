@@ -27,13 +27,13 @@ function checksum(input) {
   return String(sum % 10);
 }
 
-function formatBirthDateYYMMDD(yymmdd) {
+function formatBirthDateDDMMYYYY(yymmdd) {
   if (!/^\d{6}$/.test(yymmdd)) return "";
   const yy = Number(yymmdd.slice(0, 2));
   const mm = yymmdd.slice(2, 4);
   const dd = yymmdd.slice(4, 6);
   const yyyy = yy >= 30 ? 1900 + yy : 2000 + yy;
-  return `${yyyy}-${mm}-${dd}`;
+  return `${dd}/${mm}/${yyyy}`;
 }
 
 function formatExpiryDateYYMMDD(yymmdd) {
@@ -56,12 +56,10 @@ function fixCommonMrzConfusionsLine1(s) {
   // símbolos raros por <
   s = s.replace(/[|!]/g, "<");
 
-  // Casos típicos al inicio:
-  // POCHN... / P0CHN... -> P<CHN...
+  // Casos típicos al inicio
   if (s.startsWith("PO")) s = "P<" + s.slice(2);
   if (s.startsWith("P0")) s = "P<" + s.slice(2);
 
-  // Prefijo obligatorio P<
   if (s.startsWith("P") && !s.startsWith("P<")) {
     s = "P<" + s.slice(1);
   }
@@ -70,8 +68,6 @@ function fixCommonMrzConfusionsLine1(s) {
 }
 
 function fixCommonMrzConfusionsLine2(s) {
-  // Importante: NO tocar letras válidas globalmente.
-  // Solo limpieza básica; la normalización fina se hace por campo.
   return cleanMrzText(s);
 }
 
@@ -103,7 +99,6 @@ function repairLine1FillersPreservingNames(line1) {
   let givenAndFillers = names.slice(sepIndex);
 
   // Reparar fillers mal leídos como L SOLO en corridas largas
-  // para no romper apellidos reales como KEBBELL
   givenAndFillers = givenAndFillers.replace(/L{3,}/g, (m) => "<".repeat(m.length));
   givenAndFillers = givenAndFillers.replace(/<L</g, "<<<");
   givenAndFillers = givenAndFillers.replace(/<<L<</g, "<<<<<");
@@ -116,7 +111,7 @@ function normalizePassportField(s = "") {
     .replace(/O/g, "0")
     .replace(/Q/g, "0")
     .replace(/D/g, "0");
-  // NO L -> 1 acá: el passport number es alfanumérico
+  // NO L -> 1: el passport number es alfanumérico
 }
 
 function normalizeCountryField(s = "") {
@@ -150,7 +145,6 @@ function normalizePersonalNumberField(s = "") {
   return cleanMrzText(s)
     .replace(/O/g, "0")
     .replace(/Q/g, "0");
-  // Alfanumérico, no conviene forzar mucho más
 }
 
 function scoreLine1(line1) {
@@ -310,21 +304,21 @@ function parseTd3(line1, line2) {
     finalCheck;
 
   const checks = {
-    passport: /^\d$/.test(passportCheck) && checksum(passportNoField) === passportCheck,
-    birth: /^\d$/.test(birthCheck) && checksum(birthDate) === birthCheck,
-    expiry: /^\d$/.test(expiryCheck) && checksum(expiry) === expiryCheck,
-    personalNumber: /^\d$/.test(personalCheck) && checksum(personalNumber) === personalCheck,
-    final:
+    passportNumberOk: /^\d$/.test(passportCheck) && checksum(passportNoField) === passportCheck,
+    birthDateOk: /^\d$/.test(birthCheck) && checksum(birthDate) === birthCheck,
+    expiryOk: /^\d$/.test(expiryCheck) && checksum(expiry) === expiryCheck,
+    personalNumberOk: /^\d$/.test(personalCheck) && checksum(personalNumber) === personalCheck,
+    finalOk:
       /^\d$/.test(finalCheck) &&
       checksum(
         passportNoField +
-          passportCheck +
-          birthDate +
-          birthCheck +
-          expiry +
-          expiryCheck +
-          personalNumber +
-          personalCheck
+        passportCheck +
+        birthDate +
+        birthCheck +
+        expiry +
+        expiryCheck +
+        personalNumber +
+        personalCheck
       ) === finalCheck
   };
 
@@ -337,15 +331,16 @@ function parseTd3(line1, line2) {
     passportNo: passportNoField.replace(/</g, ""),
     nationality,
     firstName: pickOnlyFirstGivenName(givenRaw),
+    middleName: "",
     lastName: cleanupSurname(surnameRaw),
     birthDate,
-    birthDateIso: formatBirthDateYYMMDD(birthDate),
+    birthDateDDMMYYYY: formatBirthDateDDMMYYYY(birthDate),
     expiry,
     expiryIso: formatExpiryDateYYMMDD(expiry),
-    sex: sex === "<" ? "" : sex,
+    gender: sex === "<" ? "" : sex,
     personalNumber: personalNumber.replace(/</g, ""),
     checks,
-    valid: checks.passport && checks.birth && checks.expiry,
+    valid: checks.passportNumberOk && checks.birthDateOk && checks.expiryOk,
     validScore
   };
 }
@@ -439,7 +434,11 @@ function chooseBetterResult(a, b) {
   return a;
 }
 
-async function buildImageVariants(imageBuffer) {
+async function buildImageVariants(imageInput) {
+  const imageBuffer = Buffer.isBuffer(imageInput)
+    ? imageInput
+    : fs.readFileSync(imageInput);
+
   const meta = await sharp(imageBuffer).metadata();
   const width = meta.width;
   const height = meta.height;
@@ -448,10 +447,12 @@ async function buildImageVariants(imageBuffer) {
 
   const regionSpecs = [
     null,
+    { top: 0.50, h: 0.40 },
     { top: 0.55, h: 0.35 },
     { top: 0.60, h: 0.30 },
     { top: 0.65, h: 0.25 },
-    { top: 0.70, h: 0.20 }
+    { top: 0.70, h: 0.20 },
+    { top: 0.75, h: 0.20 }
   ];
 
   const results = [];
@@ -461,7 +462,7 @@ async function buildImageVariants(imageBuffer) {
 
     if (!region) {
       base = await sharp(imageBuffer)
-        .resize({ width: 2400, withoutEnlargement: true })
+        .resize({ width: 2400, withoutEnlargement: false })
         .grayscale()
         .normalize()
         .toBuffer();
@@ -469,7 +470,7 @@ async function buildImageVariants(imageBuffer) {
       const top = Math.max(0, Math.floor(height * region.top));
       const cropHeight = Math.min(height - top, Math.floor(height * region.h));
 
-      if (cropHeight < 40) continue;
+      if (cropHeight < 80) continue;
 
       base = await sharp(imageBuffer)
         .extract({
@@ -478,7 +479,7 @@ async function buildImageVariants(imageBuffer) {
           width,
           height: cropHeight
         })
-        .resize({ width: 2400, withoutEnlargement: true })
+        .resize({ width: 2400, withoutEnlargement: false })
         .grayscale()
         .normalize()
         .toBuffer();
@@ -486,15 +487,16 @@ async function buildImageVariants(imageBuffer) {
 
     const variants = [
       base,
+      await sharp(base).median(1).toBuffer(),
       await sharp(base).threshold(135).toBuffer(),
       await sharp(base).threshold(155).toBuffer(),
       await sharp(base).threshold(175).toBuffer(),
       await sharp(base).sharpen().toBuffer(),
       await sharp(base).normalize().sharpen().toBuffer(),
-      await sharp(base).rotate(-1, { background: "#000" }).toBuffer(),
-      await sharp(base).rotate(1, { background: "#000" }).toBuffer(),
-      await sharp(base).rotate(-2, { background: "#000" }).toBuffer(),
-      await sharp(base).rotate(2, { background: "#000" }).toBuffer()
+      await sharp(base).rotate(-1, { background: "#ffffff" }).toBuffer(),
+      await sharp(base).rotate(1, { background: "#ffffff" }).toBuffer(),
+      await sharp(base).rotate(-2, { background: "#ffffff" }).toBuffer(),
+      await sharp(base).rotate(2, { background: "#ffffff" }).toBuffer()
     ];
 
     for (const v of variants) results.push(v);
@@ -504,25 +506,54 @@ async function buildImageVariants(imageBuffer) {
 }
 
 async function runOcr(worker, buffer, psm) {
-  const { data } = await worker.recognize(buffer, {
+  await worker.setParameters({
     tessedit_pageseg_mode: String(psm),
     tessedit_char_whitelist: MRZ_CHARS,
     preserve_interword_spaces: "0"
   });
 
+  const { data } = await worker.recognize(buffer);
   return data?.text || "";
 }
 
-export async function readMrzBestEffort(imagePath) {
-  const imageBuffer = fs.readFileSync(imagePath);
-  const worker = await createWorker("eng");
+function toApiResult(parsed) {
+  const score = parsed.validScore || 0;
+  const warnings = [];
 
+  if (!parsed.valid) warnings.push("mrz_not_fully_valid");
+  if (!parsed.firstName) warnings.push("mrz_first_name_needs_review");
+  if (!parsed.lastName) warnings.push("mrz_last_name_needs_review");
+  if (!/^[A-Z]{3}$/.test(parsed.nationality || "")) warnings.push("mrz_nationality_needs_review");
+
+  return {
+    score,
+    data: {
+      firstName: parsed.firstName || "",
+      middleName: parsed.middleName || "",
+      lastName: parsed.lastName || "",
+      gender: parsed.gender || "",
+      passportNo: parsed.passportNo || "",
+      nationality: parsed.nationality || "",
+      birthDateDDMMYYYY: parsed.birthDateDDMMYYYY || "",
+      checks: parsed.checks || {}
+    },
+    l1: parsed.raw?.[0] || "",
+    l2: parsed.raw?.[1] || "",
+    warnings
+  };
+}
+
+export async function readMrzBestEffort(imageInput) {
+  const worker = await createWorker("eng");
   let best = null;
   const debugSamples = [];
 
+  const meta = await sharp(imageInput).metadata();
+  console.log("Input image size:", meta.width, meta.height);
+
   try {
-    const variants = await buildImageVariants(imageBuffer);
-    const psms = [6, 11, 12];
+    const variants = await buildImageVariants(imageInput);
+    const psms = [6, 7, 13];
 
     for (const variant of variants) {
       for (const psm of psms) {
@@ -531,11 +562,7 @@ export async function readMrzBestEffort(imagePath) {
         const candidates = buildCandidatesFromLines(lines);
 
         if (debugSamples.length < 8) {
-          debugSamples.push({
-            psm,
-            rawText,
-            lines
-          });
+          debugSamples.push({ psm, rawText, lines });
         }
 
         for (const c of candidates.slice(0, 12)) {
@@ -543,27 +570,21 @@ export async function readMrzBestEffort(imagePath) {
           best = chooseBetterResult(best, parsed);
 
           if (parsed.valid) {
-            return {
-              ...parsed,
-              debug: {
-                topSamples: debugSamples
-              }
-            };
+            const result = toApiResult(parsed);
+            console.log("MRZ best effort result:", result);
+            return result;
           }
         }
       }
     }
 
     if (best) {
-      return {
-        ...best,
-        debug: {
-          topSamples: debugSamples
-        }
-      };
+      const result = toApiResult(best);
+      console.log("MRZ best effort result:", result);
+      return result;
     }
 
-    throw new Error("No pude sacar ningún candidato MRZ usable");
+    return null;
   } finally {
     await worker.terminate();
   }
