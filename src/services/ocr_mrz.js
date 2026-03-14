@@ -2,7 +2,7 @@ import vision from "@google-cloud/vision";
 import { parse } from "mrz";
 
 const client = new vision.ImageAnnotatorClient({
-  credentials: JSON.parse(process.env.GOOGLE_VISION_KEY)
+  credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS)
 });
 
 function normalizeMrzLine(line = "") {
