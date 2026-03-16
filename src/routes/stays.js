@@ -127,6 +127,8 @@ export function staysRouter({ uploadDir, exportDir }) {
 
         const checkInDate = parsed.data.checkInDate || todayIsoDate();
 
+        console.log("Stay created by:", req.user?.id || req.user?._id || null);
+
         const stay = await Stay.create({
           guestId: guest._id,
           checkInDate,
@@ -137,7 +139,7 @@ export function staysRouter({ uploadDir, exportDir }) {
           mrzLine1: best.l1,
           mrzLine2: best.l2,
           status: "draft",
-          createdBy: "user_upload"
+          createdBy: req.user?.id || req.user?._id || null
         });
 
         res.status(201).json({
@@ -179,10 +181,14 @@ export function staysRouter({ uploadDir, exportDir }) {
         });
       }
 
+      console.log("Searching stays for date:", date, typeof date);
+
       const stays = await Stay.find({ checkInDate: date })
         .sort({ createdAt: -1 })
         .populate("guestId")
         .lean();
+
+      console.log(`Found ${stays.length} stays for date ${date}`);
 
       if (!stays || stays.length === 0) {
         return res.json({
@@ -216,6 +222,8 @@ export function staysRouter({ uploadDir, exportDir }) {
         };
       });
 
+      console.log(`Found ${formatted.length} stays for date ${date}`);
+
       res.json({
         date,
         stays: formatted
@@ -231,45 +239,76 @@ export function staysRouter({ uploadDir, exportDir }) {
   });
 
   router.patch("/stays/:id", async (req, res) => {
-    const schema = z.object({
-      status: z.enum(["draft", "confirmed"]).optional(),
-      checkOutDate: z.string().min(8).optional(),
-      phoneNo: z.string().optional(),
+    try {
+      const schema = z.object({
+        status: z.enum(["draft", "confirmed"]).optional(),
+        checkOutDate: z.string().min(8).optional(),
+        phoneNo: z.string().optional(),
 
-      firstName: z.string().min(1).optional(),
-      middleName: z.string().optional(),
-      lastName: z.string().optional(),
-      gender: z.enum(["M", "F"]).optional(),
-      nationality: z.string().length(3).optional(),
-      birthDate: z.string().optional()
-    });
+        firstName: z.string().min(1).optional(),
+        middleName: z.string().optional(),
+        lastName: z.string().optional(),
+        gender: z.enum(["M", "F"]).optional(),
+        nationality: z.string().length(3).optional(),
+        birthDate: z.string().optional()
+      });
 
-    const parsed = schema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: "Body inválido", details: parsed.error.flatten() });
+      console.log("PATCH /stays/:id body:", req.body);
+      console.log("PATCH /stays/:id params:", req.params);
 
-    const stay = await Stay.findById(req.params.id);
-    if (!stay) return res.status(404).json({ error: "Stay no encontrado" });
+      const parsed = schema.safeParse(req.body);
 
-    if (parsed.data.status) stay.status = parsed.data.status;
-    if (parsed.data.checkOutDate) stay.checkOutDDMMYYYY = parsed.data.checkOutDate;
-    if (parsed.data.phoneNo !== undefined) stay.phoneNo = parsed.data.phoneNo || "";
-    await stay.save();
+      if (!parsed.success) {
+        console.error("PATCH validation error:", parsed.error.flatten());
+        return res.status(400).json({
+          error: "Body inválido",
+          details: parsed.error.flatten()
+        });
+      }
 
-    const guestUpdate = {};
-    if (parsed.data.firstName) guestUpdate.firstName = parsed.data.firstName;
-    if (parsed.data.middleName !== undefined) guestUpdate.middleName = parsed.data.middleName || "";
-    if (parsed.data.lastName !== undefined) guestUpdate.lastName = parsed.data.lastName || "";
-    if (parsed.data.gender) guestUpdate.gender = parsed.data.gender;
-    if (parsed.data.nationality) guestUpdate.nationality = parsed.data.nationality.toUpperCase();
-    if (parsed.data.birthDate !== undefined) guestUpdate.birthDateDDMMYYYY = parsed.data.birthDate || "";
+      const stay = await Stay.findById(req.params.id);
 
-    if (Object.keys(guestUpdate).length) {
-      await Guest.findByIdAndUpdate(stay.guestId, guestUpdate);
+      if (!stay) {
+        console.error("Stay not found:", req.params.id);
+        return res.status(404).json({ error: "Stay no encontrado" });
+      }
+
+      // update stay
+      if (parsed.data.status) stay.status = parsed.data.status;
+      if (parsed.data.checkOutDate) stay.checkOutDDMMYYYY = parsed.data.checkOutDate;
+      if (parsed.data.phoneNo !== undefined) stay.phoneNo = parsed.data.phoneNo || "";
+
+      await stay.save();
+
+      // update guest
+      const guestUpdate = {};
+
+      if (parsed.data.firstName) guestUpdate.firstName = parsed.data.firstName;
+      if (parsed.data.middleName !== undefined) guestUpdate.middleName = parsed.data.middleName || "";
+      if (parsed.data.lastName !== undefined) guestUpdate.lastName = parsed.data.lastName || "";
+      if (parsed.data.gender) guestUpdate.gender = parsed.data.gender;
+      if (parsed.data.nationality) guestUpdate.nationality = parsed.data.nationality.toUpperCase();
+      if (parsed.data.birthDate !== undefined) guestUpdate.birthDateDDMMYYYY = parsed.data.birthDate || "";
+
+      if (Object.keys(guestUpdate).length) {
+        console.log("Updating guest:", stay.guestId, guestUpdate);
+        await Guest.findByIdAndUpdate(stay.guestId, guestUpdate);
+      }
+
+      console.log("Stay updated successfully:", stay._id);
+
+      res.json({ ok: true });
+
+    } catch (error) {
+      console.error("PATCH /stays/:id error:", error);
+
+      res.status(500).json({
+        error: "Error interno actualizando stay",
+        message: error.message
+      });
     }
-
-    res.json({ ok: true });
   });
-
+  
   router.get("/export/tm30", async (req, res) => {
     const date = String(req.query.date || todayIsoDate());
 

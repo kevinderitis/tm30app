@@ -16,7 +16,7 @@ const StaySchema = new mongoose.Schema(
     mrzLine2: { type: String, default: "" },
 
     status: { type: String, enum: ["draft", "confirmed", "exported"], default: "draft" },
-    createdBy: { type: String }
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }
   },
   { timestamps: true }
 );
