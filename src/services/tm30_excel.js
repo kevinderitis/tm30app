@@ -29,11 +29,21 @@
 import fs from "fs";
 import path from "path";
 import ExcelJS from "exceljs";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const defaultTemplate = path.join(
+  __dirname,
+  "../templates/Template-InformAccom-ImportExcel.xlsx"
+);
+
 
 export async function generateTm30Excel({
   rows,
   outFileXlsx,
-  templatePath = "../templates/Template-InformAccom-ImportExcel.xlsx"
+  templatePath = defaultTemplate
 }) {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile(templatePath);
