@@ -10,6 +10,16 @@ import { Stay } from "../models/Stay.js";
 import { generateTm30Excel } from "../services/tm30_excel.js";
 
 const BUSINESS_TIME_ZONE = process.env.APP_TIME_ZONE || "Asia/Bangkok";
+const NATIONALITY_ALIASES = {
+  D: "DEU",
+  DE: "DEU",
+  GER: "DEU",
+  UK: "GBR",
+  GB: "GBR",
+  ENG: "GBR",
+  US: "USA",
+  UAE: "ARE"
+};
 
 function todayIsoDate() {
   const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -32,6 +42,13 @@ function getStayAccessFilter(req, extra = {}) {
     ...extra,
     createdBy: req.user?.id || req.user?._id || null
   };
+}
+
+function normalizeNationality(value = "") {
+  const normalized = String(value).trim().toUpperCase();
+  if (!normalized) return "";
+
+  return NATIONALITY_ALIASES[normalized] || normalized;
 }
 
 export function staysRouter({ uploadDir, exportDir }) {
@@ -104,7 +121,7 @@ export function staysRouter({ uploadDir, exportDir }) {
                 data.gender === "M" ? "M" :
                   data.gender === "F" ? "F" :
                     "",
-          nationality: data.nationality || "",
+          nationality: normalizeNationality(data.nationality),
           birthDate: data.birthDateDDMMYYYY || ""
         },
         mrzScore: best.score,
@@ -195,6 +212,7 @@ export function staysRouter({ uploadDir, exportDir }) {
         const nameParts = fullFirstName.split(/\s+/).filter(Boolean);
         const normalizedFirstName = nameParts[0] || "";
         const normalizedMiddleName = data.middleName || nameParts.slice(1).join(" ");
+        const normalizedNationality = normalizeNationality(data.nationality);
 
         let guest = await Guest.findOne({ passportNo });
         if (!guest) {
@@ -204,7 +222,7 @@ export function staysRouter({ uploadDir, exportDir }) {
             middleName: normalizedMiddleName,
             lastName: data.lastName || "",
             gender: normalizedGender,
-            nationality: data.nationality || "",
+            nationality: normalizedNationality,
             birthDateDDMMYYYY: data.birthDateDDMMYYYY || ""
           });
         }
@@ -387,7 +405,7 @@ export function staysRouter({ uploadDir, exportDir }) {
       if (middleName !== undefined) guestUpdate.middleName = middleName || "";
       if (lastName !== undefined) guestUpdate.lastName = lastName || "";
       if (gender) guestUpdate.gender = gender;
-      if (nationality) guestUpdate.nationality = nationality.toUpperCase();
+      if (nationality) guestUpdate.nationality = normalizeNationality(nationality);
       if (birthDate !== undefined) guestUpdate.birthDateDDMMYYYY = birthDate || "";
 
       if (Object.keys(guestUpdate).length) {
