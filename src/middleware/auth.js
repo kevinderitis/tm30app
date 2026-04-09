@@ -5,9 +5,8 @@ export function requireAuth(req, res, next) {
   next();
 }
 
-export function requireAdmin(req, res, next) {
-  if (req.user?.role !== "admin") return res.status(403).json({ error: "Solo admin" });
-  next();
+export function requireAdmin(req, res) {
+  return res.status(403).json({ error: "Gestión global de usuarios deshabilitada" });
 }
 
 export function authMiddleware(req, res, next) {

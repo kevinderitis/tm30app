@@ -27,6 +27,13 @@ function todayIsoDate() {
   return `${year}-${month}-${day}`;
 }
 
+function getStayAccessFilter(req, extra = {}) {
+  return {
+    ...extra,
+    createdBy: req.user?.id || req.user?._id || null
+  };
+}
+
 export function staysRouter({ uploadDir, exportDir }) {
   fs.mkdirSync(uploadDir, { recursive: true });
   fs.mkdirSync(exportDir, { recursive: true });
@@ -260,7 +267,7 @@ export function staysRouter({ uploadDir, exportDir }) {
 
       console.log("Searching stays for date:", date, typeof date);
 
-      const stays = await Stay.find({ checkInDate: date })
+      const stays = await Stay.find(getStayAccessFilter(req, { checkInDate: date }))
         .sort({ createdAt: -1 })
         .populate("guestId")
         .lean();
@@ -350,7 +357,7 @@ export function staysRouter({ uploadDir, exportDir }) {
         });
       }
 
-      const stay = await Stay.findById(req.params.id);
+      const stay = await Stay.findOne(getStayAccessFilter(req, { _id: req.params.id }));
 
       if (!stay) {
         console.error("Stay not found:", req.params.id);
@@ -405,7 +412,9 @@ export function staysRouter({ uploadDir, exportDir }) {
   router.get("/export/tm30", async (req, res) => {
     const date = String(req.query.date || todayIsoDate());
 
-    const stays = await Stay.find({ checkInDate: date })
+    const accessFilter = getStayAccessFilter(req, { checkInDate: date });
+
+    const stays = await Stay.find(accessFilter)
       .sort({ createdAt: 1 })
       .populate("guestId")
       .lean();
@@ -438,7 +447,7 @@ export function staysRouter({ uploadDir, exportDir }) {
       }))
     });
 
-    await Stay.updateMany({ checkInDate: date }, { $set: { status: "exported" } });
+    await Stay.updateMany(accessFilter, { $set: { status: "exported" } });
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${path.basename(outXlsx)}"`);
