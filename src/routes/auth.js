@@ -64,8 +64,8 @@ export function authRouter() {
     }
   });
 
-  router.post("/logout", authMiddleware, (req, res) => {
-    req.session.destroy(() => res.json({ ok: true }));
+  router.post("/logout", (req, res) => {
+    return res.json({ ok: true });
   });
 
   router.get("/me", authMiddleware, async (req, res) => {
