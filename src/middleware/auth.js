@@ -6,7 +6,11 @@ export function requireAuth(req, res, next) {
 }
 
 export function requireAdmin(req, res) {
-  return res.status(403).json({ error: "Gestión global de usuarios deshabilitada" });
+  if (req.user?.role !== "admin") {
+    return res.status(403).json({ error: "Solo admin" });
+  }
+
+  return null;
 }
 
 export function authMiddleware(req, res, next) {

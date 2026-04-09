@@ -16,9 +16,9 @@ export async function ensureAdmin({ email, password, name }) {
     name,
     email: email.toLowerCase(),
     passwordHash,
-    role: "hostel",
+    role: "admin",
     isActive: true
   });
 
-  console.log(`✅ Usuario inicial creado: ${email} (cambiá la pass luego)`);
+  console.log(`✅ Admin inicial creado: ${email} (cambiá la pass luego)`);
 }
