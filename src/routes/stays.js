@@ -38,6 +38,70 @@ export function staysRouter({ uploadDir, exportDir }) {
   const router = express.Router();
   router.use(authMiddleware);
 
+  router.post("/mrz/scan", upload.single("passportImageMrz"), async (req, res) => {
+    const mrzFile = req.file;
+
+    if (!mrzFile) {
+      return res.status(400).json({ error: "Subí passportImageMrz" });
+    }
+
+    try {
+      const best = await readMrzBestEffort(mrzFile.path);
+
+      if (!best) {
+        return res.json({
+          detected: false,
+          guest: null,
+          mrzScore: 0,
+          warnings: ["mrz_not_detected"]
+        });
+      }
+
+      const data = best.data;
+      const warnings = [...(best.warnings || [])];
+
+      if (
+        !data.checks.passportNumberOk ||
+        !data.checks.birthDateOk ||
+        !data.checks.expiryOk
+      ) {
+        warnings.push("mrz_low_confidence");
+      }
+
+      const fullFirstName = (data.firstName || "").trim();
+      const nameParts = fullFirstName.split(/\s+/).filter(Boolean);
+
+      return res.json({
+        detected: true,
+        guest: {
+          passportNo: (data.passportNo || "").trim(),
+          firstName: nameParts[0] || "",
+          middleName: data.middleName || nameParts.slice(1).join(" "),
+          lastName: data.lastName || "",
+          gender:
+            data.gender === "male" ? "M" :
+              data.gender === "female" ? "F" :
+                data.gender === "M" ? "M" :
+                  data.gender === "F" ? "F" :
+                    "",
+          nationality: data.nationality || "",
+          birthDate: data.birthDateDDMMYYYY || ""
+        },
+        mrzScore: best.score,
+        warnings,
+        mrzLines: {
+          line1: best.l1,
+          line2: best.l2
+        }
+      });
+    } catch (e) {
+      return res.status(500).json({
+        error: "Error procesando MRZ",
+        details: e.message
+      });
+    }
+  });
+
   router.post(
     "/stays",
     upload.fields([
@@ -69,7 +133,7 @@ export function staysRouter({ uploadDir, exportDir }) {
       const fullPath = fullFile?.path || "";
 
       try {
-        const inputForMrz = fullPath || mrzPath;
+        const inputForMrz = mrzPath || fullPath;
 
         console.log("Processing image for MRZ:", inputForMrz);
 
@@ -244,13 +308,20 @@ export function staysRouter({ uploadDir, exportDir }) {
         status: z.enum(["draft", "confirmed"]).optional(),
         checkOutDate: z.string().min(8).optional(),
         phoneNo: z.string().optional(),
-
         firstName: z.string().min(1).optional(),
         middleName: z.string().optional(),
         lastName: z.string().optional(),
         gender: z.enum(["M", "F"]).optional(),
         nationality: z.string().length(3).optional(),
-        birthDate: z.string().optional()
+        birthDate: z.string().optional(),
+        guest: z.object({
+          firstName: z.string().min(1).optional(),
+          middleName: z.string().optional(),
+          lastName: z.string().optional(),
+          gender: z.enum(["M", "F"]).optional(),
+          nationality: z.string().length(3).optional(),
+          birthDate: z.string().optional()
+        }).optional()
       });
 
       console.log("PATCH /stays/:id body:", req.body);
@@ -274,6 +345,8 @@ export function staysRouter({ uploadDir, exportDir }) {
       }
 
       // update stay
+      const guestPayload = parsed.data.guest || {};
+
       if (parsed.data.status) stay.status = parsed.data.status;
       if (parsed.data.checkOutDate) stay.checkOutDDMMYYYY = parsed.data.checkOutDate;
       if (parsed.data.phoneNo !== undefined) stay.phoneNo = parsed.data.phoneNo || "";
@@ -283,12 +356,19 @@ export function staysRouter({ uploadDir, exportDir }) {
       // update guest
       const guestUpdate = {};
 
-      if (parsed.data.firstName) guestUpdate.firstName = parsed.data.firstName;
-      if (parsed.data.middleName !== undefined) guestUpdate.middleName = parsed.data.middleName || "";
-      if (parsed.data.lastName !== undefined) guestUpdate.lastName = parsed.data.lastName || "";
-      if (parsed.data.gender) guestUpdate.gender = parsed.data.gender;
-      if (parsed.data.nationality) guestUpdate.nationality = parsed.data.nationality.toUpperCase();
-      if (parsed.data.birthDate !== undefined) guestUpdate.birthDateDDMMYYYY = parsed.data.birthDate || "";
+      const firstName = parsed.data.firstName ?? guestPayload.firstName;
+      const middleName = parsed.data.middleName ?? guestPayload.middleName;
+      const lastName = parsed.data.lastName ?? guestPayload.lastName;
+      const gender = parsed.data.gender ?? guestPayload.gender;
+      const nationality = parsed.data.nationality ?? guestPayload.nationality;
+      const birthDate = parsed.data.birthDate ?? guestPayload.birthDate;
+
+      if (firstName) guestUpdate.firstName = firstName;
+      if (middleName !== undefined) guestUpdate.middleName = middleName || "";
+      if (lastName !== undefined) guestUpdate.lastName = lastName || "";
+      if (gender) guestUpdate.gender = gender;
+      if (nationality) guestUpdate.nationality = nationality.toUpperCase();
+      if (birthDate !== undefined) guestUpdate.birthDateDDMMYYYY = birthDate || "";
 
       if (Object.keys(guestUpdate).length) {
         console.log("Updating guest:", stay.guestId, guestUpdate);
