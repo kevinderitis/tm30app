@@ -186,6 +186,7 @@ export function staysRouter({ uploadDir, exportDir }) {
       checkOutDate: z.string().min(8),
       checkInDate: z.string().optional(),
       phoneNo: z.string().optional(),
+      status: z.enum(["draft", "confirmed", "exported"]).optional(),
       guest: z.object({
         firstName: z.string().min(1),
         middleName: z.string().optional(),
@@ -203,7 +204,7 @@ export function staysRouter({ uploadDir, exportDir }) {
     }
 
     try {
-      const { guest: guestPayload, checkOutDate, phoneNo, checkInDate: requestedCheckInDate } = parsed.data;
+      const { guest: guestPayload, checkOutDate, phoneNo, checkInDate: requestedCheckInDate, status } = parsed.data;
       const passportNo = guestPayload.passportNo.trim().toUpperCase();
       const normalizedNationality = normalizeNationality(guestPayload.nationality);
       const birthDateDDMMYYYY = toDdMmYyyy(guestPayload.birthDate);
@@ -241,7 +242,7 @@ export function staysRouter({ uploadDir, exportDir }) {
         mrzScore: 0,
         mrzLine1: "",
         mrzLine2: "",
-        status: "confirmed",
+        status: status || "confirmed",
         createdBy: req.user?.id || req.user?._id || null
       });
 
@@ -433,7 +434,7 @@ export function staysRouter({ uploadDir, exportDir }) {
   router.patch("/stays/:id", async (req, res) => {
     try {
       const schema = z.object({
-        status: z.enum(["draft", "confirmed"]).optional(),
+        status: z.enum(["draft", "confirmed", "exported"]).optional(),
         checkOutDate: z.string().min(8).optional(),
         phoneNo: z.string().optional(),
         firstName: z.string().min(1).optional(),
