@@ -51,6 +51,48 @@ function normalizeNationality(value = "") {
   return NATIONALITY_ALIASES[normalized] || normalized;
 }
 
+function normalizeGender(value = "") {
+  return value === "male" ? "M" :
+    value === "female" ? "F" :
+      value === "M" ? "M" :
+        value === "F" ? "F" :
+          "";
+}
+
+function toDdMmYyyy(value = "") {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+
+  const yyyyMmDdMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (yyyyMmDdMatch) {
+    const [, year, month, day] = yyyyMmDdMatch;
+    return `${day}/${month}/${year}`;
+  }
+
+  return normalized;
+}
+
+function buildStayResponse({ stay, guest, checkInDate, warnings = [] }) {
+  return {
+    stayId: String(stay._id),
+    guest: {
+      guestId: String(guest._id),
+      passportNo: guest.passportNo,
+      firstName: guest.firstName,
+      middleName: guest.middleName,
+      lastName: guest.lastName,
+      gender: guest.gender,
+      nationality: guest.nationality,
+      birthDate: guest.birthDateDDMMYYYY
+    },
+    checkInDate,
+    checkOutDate: stay.checkOutDDMMYYYY,
+    phoneNo: stay.phoneNo,
+    mrzScore: stay.mrzScore || 0,
+    warnings
+  };
+}
+
 export function staysRouter({ uploadDir, exportDir }) {
   fs.mkdirSync(uploadDir, { recursive: true });
   fs.mkdirSync(exportDir, { recursive: true });
@@ -139,6 +181,76 @@ export function staysRouter({ uploadDir, exportDir }) {
     }
   });
 
+  router.post("/stays/manual", async (req, res) => {
+    const schema = z.object({
+      checkOutDate: z.string().min(8),
+      checkInDate: z.string().optional(),
+      phoneNo: z.string().optional(),
+      guest: z.object({
+        firstName: z.string().min(1),
+        middleName: z.string().optional(),
+        lastName: z.string().min(1),
+        gender: z.enum(["M", "F"]),
+        passportNo: z.string().min(1),
+        nationality: z.string().min(1).max(3),
+        birthDate: z.string().min(1)
+      })
+    });
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Body inválido", details: parsed.error.flatten() });
+    }
+
+    try {
+      const { guest: guestPayload, checkOutDate, phoneNo, checkInDate: requestedCheckInDate } = parsed.data;
+      const passportNo = guestPayload.passportNo.trim().toUpperCase();
+      const normalizedNationality = normalizeNationality(guestPayload.nationality);
+      const birthDateDDMMYYYY = toDdMmYyyy(guestPayload.birthDate);
+
+      let guest = await Guest.findOne({ passportNo });
+      if (!guest) {
+        guest = await Guest.create({
+          passportNo,
+          firstName: guestPayload.firstName.trim(),
+          middleName: guestPayload.middleName?.trim() || "",
+          lastName: guestPayload.lastName.trim(),
+          gender: guestPayload.gender,
+          nationality: normalizedNationality,
+          birthDateDDMMYYYY
+        });
+      } else {
+        guest.firstName = guestPayload.firstName.trim();
+        guest.middleName = guestPayload.middleName?.trim() || "";
+        guest.lastName = guestPayload.lastName.trim();
+        guest.gender = normalizeGender(guestPayload.gender);
+        guest.nationality = normalizedNationality;
+        guest.birthDateDDMMYYYY = birthDateDDMMYYYY;
+        await guest.save();
+      }
+
+      const checkInDate = requestedCheckInDate || todayIsoDate();
+
+      const stay = await Stay.create({
+        guestId: guest._id,
+        checkInDate,
+        checkOutDDMMYYYY: checkOutDate,
+        phoneNo: phoneNo || "",
+        passportImageMrzPath: "",
+        passportImageFullPath: "",
+        mrzScore: 0,
+        mrzLine1: "",
+        mrzLine2: "",
+        status: "confirmed",
+        createdBy: req.user?.id || req.user?._id || null
+      });
+
+      res.status(201).json(buildStayResponse({ stay, guest, checkInDate }));
+    } catch (e) {
+      res.status(500).json({ error: "Error creando stay manual", details: e.message });
+    }
+  });
+
   router.post(
     "/stays",
     upload.fields([
@@ -201,12 +313,7 @@ export function staysRouter({ uploadDir, exportDir }) {
 
         const passportNo = (data.passportNo || "").trim();
 
-        const normalizedGender =
-          data.gender === "male" ? "M" :
-            data.gender === "female" ? "F" :
-              data.gender === "M" ? "M" :
-                data.gender === "F" ? "F" :
-                  "";
+        const normalizedGender = normalizeGender(data.gender);
 
         const fullFirstName = (data.firstName || "").trim();
         const nameParts = fullFirstName.split(/\s+/).filter(Boolean);
@@ -244,24 +351,7 @@ export function staysRouter({ uploadDir, exportDir }) {
           createdBy: req.user?.id || req.user?._id || null
         });
 
-        res.status(201).json({
-          stayId: String(stay._id),
-          guest: {
-            guestId: String(guest._id),
-            passportNo: guest.passportNo,
-            firstName: guest.firstName,
-            middleName: guest.middleName,
-            lastName: guest.lastName,
-            gender: guest.gender,
-            nationality: guest.nationality,
-            birthDate: guest.birthDateDDMMYYYY
-          },
-          checkInDate,
-          checkOutDate: stay.checkOutDDMMYYYY,
-          phoneNo: stay.phoneNo,
-          mrzScore: best.score,
-          warnings
-        });
+        res.status(201).json(buildStayResponse({ stay, guest, checkInDate, warnings }));
       } catch (e) {
         res.status(500).json({ error: "Error procesando imagen", details: e.message });
       }
@@ -422,6 +512,25 @@ export function staysRouter({ uploadDir, exportDir }) {
 
       res.status(500).json({
         error: "Error interno actualizando stay",
+        message: error.message
+      });
+    }
+  });
+
+  router.delete("/stays/:id", async (req, res) => {
+    try {
+      const stay = await Stay.findOneAndDelete(getStayAccessFilter(req, { _id: req.params.id }));
+
+      if (!stay) {
+        return res.status(404).json({ error: "Stay no encontrado" });
+      }
+
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("DELETE /stays/:id error:", error);
+
+      res.status(500).json({
+        error: "Error interno eliminando stay",
         message: error.message
       });
     }
