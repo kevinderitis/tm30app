@@ -5,6 +5,9 @@ import { User } from "../models/User.js";
 import { authMiddleware } from "../middleware/auth.js";
 import jwt from "jsonwebtoken";
 
+function getJwtSecret() {
+  return process.env.JWT_SECRET || process.env.SESSION_SECRET;
+}
 
 export function authRouter() {
   const router = express.Router();
@@ -46,7 +49,7 @@ export function authRouter() {
 
       const token = jwt.sign(
         payload,
-        process.env.JWT_SECRET,
+        getJwtSecret(),
         { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
       );
 

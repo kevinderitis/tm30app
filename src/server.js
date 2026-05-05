@@ -10,6 +10,16 @@ import { connectDb, ensureAdmin } from "./db.js";
 import { authRouter } from "./routes/auth.js";
 import { usersRouter } from "./routes/users.js";
 import { staysRouter } from "./routes/stays.js";
+import { tm30Router } from "./routes/tm30.js";
+
+function parseCorsOrigins(value) {
+  if (!value || value === "*") return ["*"];
+
+  return String(value)
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
 
 await connectDb(config.mongoUri);
 await ensureAdmin(config.admin);
@@ -18,12 +28,19 @@ fs.mkdirSync(config.uploadDir, { recursive: true });
 fs.mkdirSync(config.exportDir, { recursive: true });
 
 const app = express();
+const allowedCorsOrigins = parseCorsOrigins(config.corsOrigin);
 
 app.use(helmet());
 
 app.use(
   cors({
-    origin: config.corsOrigin,
+    origin(origin, callback) {
+      if (!origin) return callback(null, true);
+      if (origin.startsWith("chrome-extension://")) return callback(null, true);
+      if (allowedCorsOrigins.includes("*")) return callback(null, true);
+      if (allowedCorsOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error("Origin no permitido por CORS"));
+    },
     credentials: true
   })
 );
@@ -35,6 +52,13 @@ app.get("/health", (req, res) => res.json({ ok: true }));
 app.use("/api/auth", authRouter());
 app.use("/api/users", usersRouter());
 app.use("/api", staysRouter({ uploadDir: config.uploadDir, exportDir: config.exportDir }));
+app.use(
+  "/api/tm30",
+  tm30Router({
+    exportDir: config.exportDir,
+    extensionZipPath: path.resolve("./src/templates/tm30-extension.zip")
+  })
+);
 
 // opcional previews
 app.use("/uploads", express.static(path.resolve("./uploads")));

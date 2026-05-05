@@ -73,6 +73,11 @@ function toDdMmYyyy(value = "") {
 }
 
 function buildStayResponse({ stay, guest, checkInDate, warnings = [] }) {
+  const source =
+    stay.passportImageMrzPath || stay.passportImageFullPath || stay.mrzLine1 || stay.mrzLine2
+      ? "scan"
+      : "manual";
+
   return {
     stayId: String(stay._id),
     guest: {
@@ -89,7 +94,8 @@ function buildStayResponse({ stay, guest, checkInDate, warnings = [] }) {
     checkOutDate: stay.checkOutDDMMYYYY,
     phoneNo: stay.phoneNo,
     mrzScore: stay.mrzScore || 0,
-    warnings
+    warnings,
+    source
   };
 }
 
@@ -400,6 +406,7 @@ export function staysRouter({ uploadDir, exportDir }) {
           checkOutDate: s.checkOutDDMMYYYY,
           phoneNo: s.phoneNo,
           mrzScore: s.mrzScore || 0,
+          source: s.passportImageMrzPath || s.passportImageFullPath || s.mrzLine1 || s.mrzLine2 ? "scan" : "manual",
           guest: guest._id
             ? {
               id: String(guest._id),
