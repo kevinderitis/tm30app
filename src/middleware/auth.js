@@ -1,5 +1,9 @@
 import jwt from "jsonwebtoken";
 
+function getJwtSecret() {
+  return process.env.JWT_SECRET || process.env.SESSION_SECRET;
+}
+
 export function requireAuth(req, res, next) {
   if (!req.session?.user) return res.status(401).json({ error: "No autenticado" });
   next();
@@ -26,7 +30,7 @@ export function authMiddleware(req, res, next) {
     }
 
     const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, getJwtSecret());
 
     req.user = decoded;
     next();

@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "TM30 Flow Extension",
+  "version": "0.1.0",
+  "description": "Automates TM30 Excel uploads from TM30 Flow.",
+  "permissions": [
+    "storage",
+    "tabs",
+    "windows"
+  ],
+  "host_permissions": [
+    "https://tm30.immigration.go.th/*",
+    "https://*.onrender.com/*",
+    "http://localhost:3001/*",
+    "http://127.0.0.1:3001/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*",
+        "https://*.onrender.com/*"
+      ],
+      "js": [
+        "utils.js",
+        "content-app.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://tm30.immigration.go.th/*"
+      ],
+      "js": [
+        "utils.js",
+        "content-tm30.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "TM30 Flow Extension"
+  }
+}

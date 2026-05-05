@@ -2,8 +2,28 @@ import fs from "fs";
 import vision from "@google-cloud/vision";
 import { parse } from "mrz";
 
+function readGoogleCredentials() {
+  const rawCredentials =
+    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ||
+    process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+  if (!rawCredentials) {
+    throw new Error(
+      "Missing Google Vision credentials. Set GOOGLE_APPLICATION_CREDENTIALS_JSON or GOOGLE_APPLICATION_CREDENTIALS in .env"
+    );
+  }
+
+  try {
+    return JSON.parse(rawCredentials);
+  } catch (error) {
+    throw new Error(
+      "Invalid Google Vision credentials JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON / GOOGLE_APPLICATION_CREDENTIALS"
+    );
+  }
+}
+
 const client = new vision.ImageAnnotatorClient({
-  credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS)
+  credentials: readGoogleCredentials()
 });
 
 function normalizeMrzLine(line = "") {
