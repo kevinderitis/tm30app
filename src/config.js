@@ -12,6 +12,7 @@ export const config = {
   cookieSameSite: process.env.COOKIE_SAME_SITE || "lax",
 
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
+  publicBaseUrl: process.env.PUBLIC_BASE_URL || "",
 
   uploadDir: process.env.UPLOAD_DIR || "./uploads/passports",
   exportDir: process.env.EXPORT_DIR || "./output",

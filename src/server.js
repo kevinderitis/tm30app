@@ -30,6 +30,8 @@ fs.mkdirSync(config.exportDir, { recursive: true });
 const app = express();
 const allowedCorsOrigins = parseCorsOrigins(config.corsOrigin);
 
+app.set("trust proxy", true);
+
 app.use(helmet());
 
 app.use(

@@ -8,6 +8,7 @@ import { authMiddleware } from "../middleware/auth.js";
 import { Stay } from "../models/Stay.js";
 import { Tm30Task, TM30_TASK_STATUSES } from "../models/Tm30Task.js";
 import { generateTm30Excel } from "../services/tm30_excel.js";
+import { config } from "../config.js";
 
 const TASK_TOKEN_HEADER = "x-tm30-task-token";
 const TASK_TOKEN_TTL_SECONDS = 60 * 30;
@@ -19,7 +20,13 @@ function getTaskTokenSecret() {
 }
 
 function getRequestBaseUrl(req) {
-  return `${req.protocol}://${req.get("host")}`;
+  if (config.publicBaseUrl) {
+    return String(config.publicBaseUrl).replace(/\/$/, "");
+  }
+
+  const forwardedProtoHeader = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const protocol = forwardedProtoHeader || req.protocol || "https";
+  return `${protocol}://${req.get("host")}`;
 }
 
 function signTaskToken(task) {
