@@ -102,7 +102,9 @@ function toApiResult(parsed, mrzLines, rawText) {
 
 export async function readMrzBestEffort(imageInput) {
   try {
-    const imageBytes = fs.readFileSync(imageInput);
+    const imageBytes = Buffer.isBuffer(imageInput)
+      ? imageInput
+      : fs.readFileSync(imageInput);
 
     console.log("Google Vision: processing image with size", imageBytes.length);
 

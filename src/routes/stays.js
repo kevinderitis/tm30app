@@ -119,11 +119,19 @@ export function staysRouter({ uploadDir, exportDir }) {
       cb(ok ? null : new Error("Solo JPG/PNG"), ok);
     }
   });
+  const scanUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const ok = ["image/jpeg", "image/jpg", "image/png"].includes(file.mimetype);
+      cb(ok ? null : new Error("Solo JPG/PNG"), ok);
+    }
+  });
 
   const router = express.Router();
   router.use(authMiddleware);
 
-  router.post("/mrz/scan", upload.single("passportImageMrz"), async (req, res) => {
+  router.post("/mrz/scan", scanUpload.single("passportImageMrz"), async (req, res) => {
     const mrzFile = req.file;
 
     if (!mrzFile) {
@@ -131,7 +139,7 @@ export function staysRouter({ uploadDir, exportDir }) {
     }
 
     try {
-      const best = await readMrzBestEffort(mrzFile.path);
+      const best = await readMrzBestEffort(mrzFile.buffer);
 
       if (!best) {
         return res.json({
