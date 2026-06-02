@@ -5,20 +5,54 @@ import path from "node:path";
 import { z } from "zod";
 import { authMiddleware } from "../middleware/auth.js";
 import { readMrzBestEffort } from "../services/ocr_mrz.js";
+import { extractPassportDataWithNvidia } from "../services/nvidia_passport.js";
 import { Guest } from "../models/Guest.js";
 import { Stay } from "../models/Stay.js";
 import { generateTm30Excel } from "../services/tm30_excel.js";
 
 const BUSINESS_TIME_ZONE = process.env.APP_TIME_ZONE || "Asia/Bangkok";
 const NATIONALITY_ALIASES = {
+  ARG: "ARG",
+  ARGENTINA: "ARG",
+  ARGENTINE: "ARG",
+  ARGENTINIAN: "ARG",
   D: "DEU",
   DE: "DEU",
   GER: "DEU",
+  GERMANY: "DEU",
+  DEUTSCHLAND: "DEU",
   UK: "GBR",
   GB: "GBR",
   ENG: "GBR",
+  UNITEDKINGDOM: "GBR",
+  BRITISH: "GBR",
   US: "USA",
-  UAE: "ARE"
+  USA: "USA",
+  UNITEDSTATES: "USA",
+  AMERICAN: "USA",
+  UAE: "ARE",
+  THAILAND: "THA",
+  THAI: "THA"
+};
+
+const MONTH_ALIASES = {
+  JAN: "01",
+  ENE: "01",
+  FEB: "02",
+  MAR: "03",
+  APR: "04",
+  ABR: "04",
+  MAY: "05",
+  JUN: "06",
+  JUL: "07",
+  AUG: "08",
+  AGO: "08",
+  SEP: "09",
+  SEPT: "09",
+  OCT: "10",
+  NOV: "11",
+  DEC: "12",
+  DIC: "12"
 };
 
 function todayIsoDate() {
@@ -45,10 +79,12 @@ function getStayAccessFilter(req, extra = {}) {
 }
 
 function normalizeNationality(value = "") {
-  const normalized = String(value).trim().toUpperCase();
+  const normalized = String(value).trim().toUpperCase().replace(/[^A-Z]/g, "");
   if (!normalized) return "";
 
-  return NATIONALITY_ALIASES[normalized] || normalized;
+  if (normalized.length === 3) return normalized;
+
+  return NATIONALITY_ALIASES[normalized] || normalized.slice(0, 3);
 }
 
 function normalizeGender(value = "") {
@@ -99,6 +135,80 @@ function buildStayResponse({ stay, guest, checkInDate, warnings = [] }) {
   };
 }
 
+function normalizeBirthDateForForm(value = "") {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return normalized;
+  }
+
+  const ddmmyyyyMatch = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (ddmmyyyyMatch) {
+    const [, day, month, year] = ddmmyyyyMatch;
+    return `${year}-${month}-${day}`;
+  }
+
+  const compactSlashMatch = normalized.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (compactSlashMatch) {
+    const [, rawDay, rawMonth, rawYear] = compactSlashMatch;
+    const day = rawDay.padStart(2, "0");
+    const month = rawMonth.padStart(2, "0");
+    const year = rawYear.length === 2 ? `${Number(rawYear) >= 30 ? "19" : "20"}${rawYear}` : rawYear;
+    return `${year}-${month}-${day}`;
+  }
+
+  const textualMonthMatch = normalized
+    .toUpperCase()
+    .replace(/,/g, "")
+    .match(/^(\d{1,2})\s+([A-Z]{3,4})\s+(\d{2,4})$/);
+  if (textualMonthMatch) {
+    const [, rawDay, rawMonth, rawYear] = textualMonthMatch;
+    const month = MONTH_ALIASES[rawMonth];
+    if (month) {
+      const day = rawDay.padStart(2, "0");
+      const year = rawYear.length === 2 ? `${Number(rawYear) >= 30 ? "19" : "20"}${rawYear}` : rawYear;
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  return "";
+}
+
+async function upsertGuestFromExtractedData({
+  passportNo,
+  firstName,
+  middleName,
+  lastName,
+  gender = "",
+  nationality = "",
+  birthDateDDMMYYYY = ""
+}) {
+  let guest = await Guest.findOne({ passportNo });
+
+  if (!guest) {
+    guest = await Guest.create({
+      passportNo,
+      firstName,
+      middleName,
+      lastName,
+      gender: normalizeGender(gender),
+      nationality: normalizeNationality(nationality),
+      birthDateDDMMYYYY
+    });
+  } else {
+    guest.firstName = firstName;
+    guest.middleName = middleName;
+    guest.lastName = lastName;
+    guest.gender = normalizeGender(gender);
+    guest.nationality = normalizeNationality(nationality);
+    guest.birthDateDDMMYYYY = birthDateDDMMYYYY;
+    await guest.save();
+  }
+
+  return guest;
+}
+
 export function staysRouter({ uploadDir, exportDir }) {
   fs.mkdirSync(uploadDir, { recursive: true });
   fs.mkdirSync(exportDir, { recursive: true });
@@ -125,6 +235,14 @@ export function staysRouter({ uploadDir, exportDir }) {
     fileFilter: (req, file, cb) => {
       const ok = ["image/jpeg", "image/jpg", "image/png"].includes(file.mimetype);
       cb(ok ? null : new Error("Solo JPG/PNG"), ok);
+    }
+  });
+  const uploadScanImage = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const ok = file.mimetype.startsWith("image/");
+      cb(ok ? null : new Error("Solo imagenes"), ok);
     }
   });
 
@@ -263,6 +381,135 @@ export function staysRouter({ uploadDir, exportDir }) {
       res.status(201).json(buildStayResponse({ stay, guest, checkInDate }));
     } catch (e) {
       res.status(500).json({ error: "Error creando stay manual", details: e.message });
+    }
+  });
+
+  router.post("/stays/upload-image", uploadScanImage.single("passportImage"), async (req, res) => {
+    const schema = z.object({
+      checkOutDate: z.string().min(8),
+      phoneNo: z.string().optional(),
+      checkInDate: z.string().optional()
+    });
+
+    console.log("[UPLOAD_IMAGE] Incoming request body", req.body);
+
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      console.error("[UPLOAD_IMAGE] Invalid body", parsed.error.flatten());
+      return res.status(400).json({ error: "Body inválido", details: parsed.error.flatten() });
+    }
+
+    if (!req.file) {
+      console.error("[UPLOAD_IMAGE] Missing passportImage file");
+      return res.status(400).json({ error: "Subí passportImage" });
+    }
+
+    console.log("[UPLOAD_IMAGE] File received", {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+    });
+
+    try {
+      const extraction = await extractPassportDataWithNvidia(req.file);
+      console.log("[UPLOAD_IMAGE] Extraction raw result", extraction.data);
+      const passportNo = String(extraction.data.passportNumber || "").trim().toUpperCase();
+      const firstName = String(extraction.data.name || "").trim();
+      const middleName = String(extraction.data.middleName || "").trim();
+      const lastName = String(extraction.data.lastName || "").trim();
+      const nationality = normalizeNationality(extraction.data.nationality);
+
+      console.log("[UPLOAD_IMAGE] Normalized identity fields", {
+        passportNo,
+        firstName,
+        middleName,
+        lastName,
+        nationality,
+        birthday: extraction.data.birthday,
+      });
+
+      if (!passportNo || !firstName) {
+        console.error("[UPLOAD_IMAGE] Missing minimum extracted fields", extraction.data);
+        return res.status(422).json({
+          error: "No se pudieron extraer suficientes datos del pasaporte.",
+          details: extraction.data
+        });
+      }
+
+      const birthDateForForm = normalizeBirthDateForForm(extraction.data.birthday);
+      const birthDateDDMMYYYY = toDdMmYyyy(birthDateForForm || extraction.data.birthday);
+      console.log("[UPLOAD_IMAGE] Birth date normalization", {
+        original: extraction.data.birthday,
+        birthDateForForm,
+        birthDateDDMMYYYY,
+      });
+      const guest = await upsertGuestFromExtractedData({
+        passportNo,
+        firstName,
+        middleName,
+        lastName,
+        nationality,
+        birthDateDDMMYYYY
+      });
+
+      console.log("[UPLOAD_IMAGE] Guest upserted", {
+        guestId: String(guest._id),
+        passportNo: guest.passportNo,
+        nationality: guest.nationality,
+        birthDateDDMMYYYY: guest.birthDateDDMMYYYY,
+      });
+
+      const checkInDate = parsed.data.checkInDate || todayIsoDate();
+      const stay = await Stay.create({
+        guestId: guest._id,
+        checkInDate,
+        checkOutDDMMYYYY: parsed.data.checkOutDate,
+        phoneNo: parsed.data.phoneNo || "",
+        passportImageMrzPath: "",
+        passportImageFullPath: "",
+        mrzScore: 0,
+        mrzLine1: "",
+        mrzLine2: "",
+        status: "confirmed",
+        createdBy: req.user?.id || req.user?._id || null
+      });
+
+      console.log("[UPLOAD_IMAGE] Stay created", {
+        stayId: String(stay._id),
+        checkInDate,
+        checkOutDate: parsed.data.checkOutDate,
+        createdBy: req.user?.id || req.user?._id || null,
+      });
+
+      return res.status(201).json({
+        ...buildStayResponse({
+          stay,
+          guest,
+          checkInDate,
+          warnings: ["Extracted from uploaded passport image"]
+        }),
+        source: "upload",
+        guest: {
+          guestId: String(guest._id),
+          passportNo: guest.passportNo,
+          firstName: guest.firstName,
+          middleName: guest.middleName,
+          lastName: guest.lastName,
+          gender: guest.gender,
+          nationality: guest.nationality,
+          birthDate: birthDateForForm,
+          birthDateDDMMYYYY: guest.birthDateDDMMYYYY
+        }
+      });
+    } catch (e) {
+      console.error("[UPLOAD_IMAGE] Failed", {
+        message: e.message,
+        stack: e.stack,
+      });
+      return res.status(500).json({
+        error: "Error procesando imagen subida",
+        details: e.message
+      });
     }
   });
 

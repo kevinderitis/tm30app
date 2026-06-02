@@ -13,6 +13,8 @@ export const config = {
 
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
   publicBaseUrl: process.env.PUBLIC_BASE_URL || "",
+  nvidiaApiKey: process.env.NVIDIA_API_KEY || "",
+  nvidiaModel: process.env.NVIDIA_MODEL || "stepfun-ai/step-3.7-flash",
 
   uploadDir: process.env.UPLOAD_DIR || "./uploads/passports",
   exportDir: process.env.EXPORT_DIR || "./output",
