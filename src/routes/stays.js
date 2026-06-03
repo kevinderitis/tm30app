@@ -135,6 +135,26 @@ function buildStayResponse({ stay, guest, checkInDate, warnings = [] }) {
   };
 }
 
+async function findDuplicateStayForGuestOnDate({ req, guestId, checkInDate }) {
+  if (!guestId || !checkInDate) return null;
+
+  return Stay.findOne(
+    getStayAccessFilter(req, {
+      guestId,
+      checkInDate
+    })
+  );
+}
+
+function sendDuplicateStayResponse({ res, stay, guest, checkInDate }) {
+  return res.status(409).json({
+    error: "Registro duplicado",
+    message: `This passport is already registered for ${checkInDate}.`,
+    code: "DUPLICATE_STAY",
+    existingStay: buildStayResponse({ stay, guest, checkInDate })
+  });
+}
+
 function normalizeBirthDateForForm(value = "") {
   const normalized = String(value || "").trim();
   if (!normalized) return "";
@@ -364,6 +384,20 @@ export function staysRouter({ uploadDir, exportDir }) {
 
       const checkInDate = requestedCheckInDate || todayIsoDate();
 
+      const duplicateStay = await findDuplicateStayForGuestOnDate({
+        req,
+        guestId: guest._id,
+        checkInDate
+      });
+      if (duplicateStay) {
+        return sendDuplicateStayResponse({
+          res,
+          stay: duplicateStay,
+          guest,
+          checkInDate
+        });
+      }
+
       const stay = await Stay.create({
         guestId: guest._id,
         checkInDate,
@@ -417,6 +451,7 @@ export function staysRouter({ uploadDir, exportDir }) {
       const firstName = String(extraction.data.name || "").trim();
       const middleName = String(extraction.data.middleName || "").trim();
       const lastName = String(extraction.data.lastName || "").trim();
+      const gender = normalizeGender(extraction.data.gender);
       const nationality = normalizeNationality(extraction.data.nationality);
 
       console.log("[UPLOAD_IMAGE] Normalized identity fields", {
@@ -424,6 +459,7 @@ export function staysRouter({ uploadDir, exportDir }) {
         firstName,
         middleName,
         lastName,
+        gender,
         nationality,
         birthday: extraction.data.birthday,
       });
@@ -448,6 +484,7 @@ export function staysRouter({ uploadDir, exportDir }) {
         firstName,
         middleName,
         lastName,
+        gender,
         nationality,
         birthDateDDMMYYYY
       });
@@ -460,6 +497,25 @@ export function staysRouter({ uploadDir, exportDir }) {
       });
 
       const checkInDate = parsed.data.checkInDate || todayIsoDate();
+      const duplicateStay = await findDuplicateStayForGuestOnDate({
+        req,
+        guestId: guest._id,
+        checkInDate
+      });
+      if (duplicateStay) {
+        console.warn("[UPLOAD_IMAGE] Duplicate stay detected", {
+          guestId: String(guest._id),
+          stayId: String(duplicateStay._id),
+          checkInDate,
+        });
+        return sendDuplicateStayResponse({
+          res,
+          stay: duplicateStay,
+          guest,
+          checkInDate
+        });
+      }
+
       const stay = await Stay.create({
         guestId: guest._id,
         checkInDate,
@@ -597,6 +653,19 @@ export function staysRouter({ uploadDir, exportDir }) {
         }
 
         const checkInDate = parsed.data.checkInDate || todayIsoDate();
+        const duplicateStay = await findDuplicateStayForGuestOnDate({
+          req,
+          guestId: guest._id,
+          checkInDate
+        });
+        if (duplicateStay) {
+          return sendDuplicateStayResponse({
+            res,
+            stay: duplicateStay,
+            guest,
+            checkInDate
+          });
+        }
 
         console.log("Stay created by:", req.user?.id || req.user?._id || null);
 

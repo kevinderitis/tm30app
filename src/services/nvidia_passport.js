@@ -3,7 +3,7 @@ import { config } from "../config.js";
 const NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
 const OUTPUT_TOKEN_BUDGETS = [960, 1280];
 const JSON_OUTPUT_EXAMPLE =
-  '{"name":"JOHN","middle_name":"PAUL","last_name":"SMITH","birthday":"1990-01-31","nationality":"USA","passport_number":"123456789"}';
+  '{"name":"JOHN","middle_name":"PAUL","last_name":"SMITH","birthday":"1990-01-31","gender":"M","nationality":"USA","passport_number":"123456789"}';
 const PASSPORT_JSON_SCHEMA = {
   name: "passport_extraction",
   schema: {
@@ -14,6 +14,7 @@ const PASSPORT_JSON_SCHEMA = {
       middle_name: { type: "string" },
       last_name: { type: "string" },
       birthday: { type: "string" },
+      gender: { type: "string" },
       nationality: { type: "string" },
       passport_number: { type: "string" },
     },
@@ -22,6 +23,7 @@ const PASSPORT_JSON_SCHEMA = {
       "middle_name",
       "last_name",
       "birthday",
+      "gender",
       "nationality",
       "passport_number",
     ],
@@ -48,6 +50,7 @@ function mergePassportData(...sources) {
     middle_name: "",
     last_name: "",
     birthday: "",
+    gender: "",
     nationality: "",
     passport_number: "",
   };
@@ -182,6 +185,7 @@ function extractLabeledFields(content = "") {
     middle_name: captureValue("middle[_\\s-]?name"),
     last_name: captureValue("last[_\\s-]?name"),
     birthday: captureValue("birthday"),
+    gender: captureValue("gender") || captureValue("sex"),
     nationality: captureValue("nationality"),
     passport_number: captureValue("passport[_\\s-]?number"),
   };
@@ -274,6 +278,14 @@ function extractLabeledFields(content = "") {
       cleanNarrativeValue(sentenceCapture(/Passport No\.?\s*:\s*([A-Z0-9]+)/i));
   }
 
+  if (!extracted.gender) {
+    extracted.gender =
+      cleanNarrativeValue(sentenceCapture(/gender\s+is\s*([^,?.\n]+)/i)) ||
+      cleanNarrativeValue(sentenceCapture(/sex\s+is\s*([^,?.\n]+)/i)) ||
+      cleanNarrativeValue(sentenceCapture(/Gender\s*:\s*([^\n]+)/i)) ||
+      cleanNarrativeValue(sentenceCapture(/Sex\s*:\s*([^\n]+)/i));
+  }
+
   if (!extracted.nationality) {
     extracted.nationality =
       cleanNarrativeValue(sentenceCapture(/nationality\s+is\s*([^,?.\n]+)/i)) ||
@@ -355,6 +367,7 @@ function normalizePassportData(payload = {}) {
     middleName: String(payload.middle_name || payload.middleName || "").trim(),
     lastName: String(payload.last_name || payload.lastName || payload.surname || "").trim(),
     birthday: String(payload.birthday || payload.date_of_birth || payload.dateOfBirth || "").trim(),
+    gender: String(payload.gender || payload.sex || "").trim().toUpperCase(),
     nationality: String(payload.nationality || payload.nationality_code || payload.country_code || "").trim(),
     passportNumber: String(
       payload.passport_number || payload.passportNumber || payload.document_number || ""
@@ -423,7 +436,7 @@ function createNvidiaImagePayload(dataUrl, maxTokens = OUTPUT_TOKEN_BUDGETS[0]) 
           {
             type: "text",
             text:
-              'Extract passport data from this image and return the JSON immediately, without explanation or analysis. Return exactly one minified JSON object with exactly these keys: "name", "middle_name", "last_name", "birthday", "nationality", "passport_number". Use empty strings if a value is missing. For "birthday", normalize to YYYY-MM-DD when possible. For "nationality", prefer the 3-letter passport code if visible.',
+              'Extract passport data from this image and return the JSON immediately, without explanation or analysis. Return exactly one minified JSON object with exactly these keys: "name", "middle_name", "last_name", "birthday", "gender", "nationality", "passport_number". Use empty strings if a value is missing. For "birthday", normalize to YYYY-MM-DD when possible. For "gender", return only "M", "F", or "". For "nationality", prefer the 3-letter passport code if visible.',
           },
           {
             type: "image_url",
