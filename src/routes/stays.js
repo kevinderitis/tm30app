@@ -95,6 +95,36 @@ function normalizeGender(value = "") {
           "";
 }
 
+function sanitizeTm30NamePart(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sanitizeGuestNamesForTm30(guest = {}) {
+  return {
+    ...guest,
+    firstName: sanitizeTm30NamePart(guest.firstName),
+    middleName: sanitizeTm30NamePart(guest.middleName),
+    lastName: sanitizeTm30NamePart(guest.lastName)
+  };
+}
+
+function isThaiNationality(value = "") {
+  return normalizeNationality(value) === "THA";
+}
+
+function sendThaiNationalityResponse(res) {
+  return res.status(422).json({
+    error: "Thai nationality does not require TM30 registration.",
+    message: "This passport belongs to a Thai national, so it will not be added to TM30.",
+    code: "THAI_NATIONALITY"
+  });
+}
+
 function toDdMmYyyy(value = "") {
   const normalized = String(value || "").trim();
   if (!normalized) return "";
@@ -109,6 +139,7 @@ function toDdMmYyyy(value = "") {
 }
 
 function buildStayResponse({ stay, guest, checkInDate, warnings = [] }) {
+  const sanitizedGuest = sanitizeGuestNamesForTm30(guest);
   const source =
     stay.passportImageMrzPath || stay.passportImageFullPath || stay.mrzLine1 || stay.mrzLine2
       ? "scan"
@@ -117,14 +148,14 @@ function buildStayResponse({ stay, guest, checkInDate, warnings = [] }) {
   return {
     stayId: String(stay._id),
     guest: {
-      guestId: String(guest._id),
-      passportNo: guest.passportNo,
-      firstName: guest.firstName,
-      middleName: guest.middleName,
-      lastName: guest.lastName,
-      gender: guest.gender,
-      nationality: guest.nationality,
-      birthDate: guest.birthDateDDMMYYYY
+      guestId: String(sanitizedGuest._id),
+      passportNo: sanitizedGuest.passportNo,
+      firstName: sanitizedGuest.firstName,
+      middleName: sanitizedGuest.middleName,
+      lastName: sanitizedGuest.lastName,
+      gender: sanitizedGuest.gender,
+      nationality: sanitizedGuest.nationality,
+      birthDate: sanitizedGuest.birthDateDDMMYYYY
     },
     checkInDate,
     checkOutDate: stay.checkOutDDMMYYYY,
@@ -205,21 +236,24 @@ async function upsertGuestFromExtractedData({
   birthDateDDMMYYYY = ""
 }) {
   let guest = await Guest.findOne({ passportNo });
+  const sanitizedFirstName = sanitizeTm30NamePart(firstName);
+  const sanitizedMiddleName = sanitizeTm30NamePart(middleName);
+  const sanitizedLastName = sanitizeTm30NamePart(lastName);
 
   if (!guest) {
     guest = await Guest.create({
       passportNo,
-      firstName,
-      middleName,
-      lastName,
+      firstName: sanitizedFirstName,
+      middleName: sanitizedMiddleName,
+      lastName: sanitizedLastName,
       gender: normalizeGender(gender),
       nationality: normalizeNationality(nationality),
       birthDateDDMMYYYY
     });
   } else {
-    guest.firstName = firstName;
-    guest.middleName = middleName;
-    guest.lastName = lastName;
+    guest.firstName = sanitizedFirstName;
+    guest.middleName = sanitizedMiddleName;
+    guest.lastName = sanitizedLastName;
     guest.gender = normalizeGender(gender);
     guest.nationality = normalizeNationality(nationality);
     guest.birthDateDDMMYYYY = birthDateDDMMYYYY;
@@ -359,23 +393,29 @@ export function staysRouter({ uploadDir, exportDir }) {
       const { guest: guestPayload, checkOutDate, phoneNo, checkInDate: requestedCheckInDate, status } = parsed.data;
       const passportNo = guestPayload.passportNo.trim().toUpperCase();
       const normalizedNationality = normalizeNationality(guestPayload.nationality);
+      if (isThaiNationality(normalizedNationality)) {
+        return sendThaiNationalityResponse(res);
+      }
       const birthDateDDMMYYYY = toDdMmYyyy(guestPayload.birthDate);
+      const sanitizedFirstName = sanitizeTm30NamePart(guestPayload.firstName);
+      const sanitizedMiddleName = sanitizeTm30NamePart(guestPayload.middleName);
+      const sanitizedLastName = sanitizeTm30NamePart(guestPayload.lastName);
 
       let guest = await Guest.findOne({ passportNo });
       if (!guest) {
         guest = await Guest.create({
           passportNo,
-          firstName: guestPayload.firstName.trim(),
-          middleName: guestPayload.middleName?.trim() || "",
-          lastName: guestPayload.lastName.trim(),
+          firstName: sanitizedFirstName,
+          middleName: sanitizedMiddleName,
+          lastName: sanitizedLastName,
           gender: guestPayload.gender,
           nationality: normalizedNationality,
           birthDateDDMMYYYY
         });
       } else {
-        guest.firstName = guestPayload.firstName.trim();
-        guest.middleName = guestPayload.middleName?.trim() || "";
-        guest.lastName = guestPayload.lastName.trim();
+        guest.firstName = sanitizedFirstName;
+        guest.middleName = sanitizedMiddleName;
+        guest.lastName = sanitizedLastName;
         guest.gender = normalizeGender(guestPayload.gender);
         guest.nationality = normalizedNationality;
         guest.birthDateDDMMYYYY = birthDateDDMMYYYY;
@@ -453,6 +493,13 @@ export function staysRouter({ uploadDir, exportDir }) {
       const lastName = String(extraction.data.lastName || "").trim();
       const gender = normalizeGender(extraction.data.gender);
       const nationality = normalizeNationality(extraction.data.nationality);
+      if (isThaiNationality(nationality)) {
+        console.warn("[UPLOAD_IMAGE] Thai passport skipped", {
+          passportNo,
+          nationality,
+        });
+        return sendThaiNationalityResponse(res);
+      }
 
       console.log("[UPLOAD_IMAGE] Normalized identity fields", {
         passportNo,
@@ -638,6 +685,9 @@ export function staysRouter({ uploadDir, exportDir }) {
         const normalizedFirstName = nameParts[0] || "";
         const normalizedMiddleName = data.middleName || nameParts.slice(1).join(" ");
         const normalizedNationality = normalizeNationality(data.nationality);
+        if (isThaiNationality(normalizedNationality)) {
+          return sendThaiNationalityResponse(res);
+        }
 
         let guest = await Guest.findOne({ passportNo });
         if (!guest) {
@@ -823,9 +873,13 @@ export function staysRouter({ uploadDir, exportDir }) {
       const nationality = parsed.data.nationality ?? guestPayload.nationality;
       const birthDate = parsed.data.birthDate ?? guestPayload.birthDate;
 
-      if (firstName) guestUpdate.firstName = firstName;
-      if (middleName !== undefined) guestUpdate.middleName = middleName || "";
-      if (lastName !== undefined) guestUpdate.lastName = lastName || "";
+      if (nationality && isThaiNationality(nationality)) {
+        return sendThaiNationalityResponse(res);
+      }
+
+      if (firstName) guestUpdate.firstName = sanitizeTm30NamePart(firstName);
+      if (middleName !== undefined) guestUpdate.middleName = sanitizeTm30NamePart(middleName || "");
+      if (lastName !== undefined) guestUpdate.lastName = sanitizeTm30NamePart(lastName || "");
       if (gender) guestUpdate.gender = gender;
       if (nationality) guestUpdate.nationality = normalizeNationality(nationality);
       if (birthDate !== undefined) guestUpdate.birthDateDDMMYYYY = birthDate || "";
@@ -871,16 +925,31 @@ export function staysRouter({ uploadDir, exportDir }) {
   router.get("/export/tm30", async (req, res) => {
     const date = String(req.query.date || todayIsoDate());
 
-    const accessFilter = getStayAccessFilter(req, { checkInDate: date });
+    const accessFilter = getStayAccessFilter(req, {
+      checkInDate: date,
+      status: "confirmed"
+    });
 
     const stays = await Stay.find(accessFilter)
       .sort({ createdAt: 1 })
       .populate("guestId")
       .lean();
 
-    if (!stays.length) return res.status(404).json({ error: "No hay stays para ese día" });
+    if (!stays.length) {
+      return res.status(404).json({
+        error: "No hay registros confirmados para ese día"
+      });
+    }
 
-    const missing = stays.filter((s) => !s.checkOutDDMMYYYY);
+    const exportableStays = stays.filter((s) => !isThaiNationality(s.guestId?.nationality || ""));
+    if (!exportableStays.length) {
+      return res.status(400).json({
+        error: "No hay registros exportables para ese día.",
+        message: "Thai nationals are excluded from TM30 export."
+      });
+    }
+
+    const missing = exportableStays.filter((s) => !s.checkOutDDMMYYYY);
     if (missing.length) {
       return res.status(400).json({
         error: "Hay stays sin Check-out Date (requerido por template).",
@@ -893,10 +962,10 @@ export function staysRouter({ uploadDir, exportDir }) {
 
     await generateTm30Excel({
       outFileXlsx: outXlsx,
-      rows: stays.map((s) => ({
-        firstName: s.guestId.firstName || "",
-        middleName: s.guestId.middleName || "",
-        lastName: s.guestId.lastName || "",
+      rows: exportableStays.map((s) => ({
+        firstName: sanitizeTm30NamePart(s.guestId.firstName || ""),
+        middleName: sanitizeTm30NamePart(s.guestId.middleName || ""),
+        lastName: sanitizeTm30NamePart(s.guestId.lastName || ""),
         gender: s.guestId.gender || "",
         passportNo: s.guestId.passportNo || "",
         nationality: s.guestId.nationality || "",
