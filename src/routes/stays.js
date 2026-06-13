@@ -104,9 +104,20 @@ function sanitizeTm30NamePart(value = "") {
     .trim();
 }
 
+function sanitizePassportNumber(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9]/g, "")
+    .trim();
+}
+
 function sanitizeGuestNamesForTm30(guest = {}) {
   return {
     ...guest,
+    passportNo: sanitizePassportNumber(guest.passportNo),
     firstName: sanitizeTm30NamePart(guest.firstName),
     middleName: sanitizeTm30NamePart(guest.middleName),
     lastName: sanitizeTm30NamePart(guest.lastName)
@@ -242,7 +253,7 @@ async function upsertGuestFromExtractedData({
 
   if (!guest) {
     guest = await Guest.create({
-      passportNo,
+      passportNo: sanitizePassportNumber(passportNo),
       firstName: sanitizedFirstName,
       middleName: sanitizedMiddleName,
       lastName: sanitizedLastName,
@@ -251,6 +262,7 @@ async function upsertGuestFromExtractedData({
       birthDateDDMMYYYY
     });
   } else {
+    guest.passportNo = sanitizePassportNumber(passportNo);
     guest.firstName = sanitizedFirstName;
     guest.middleName = sanitizedMiddleName;
     guest.lastName = sanitizedLastName;
@@ -339,7 +351,7 @@ export function staysRouter({ uploadDir, exportDir }) {
       return res.json({
         detected: true,
         guest: {
-          passportNo: (data.passportNo || "").trim(),
+          passportNo: sanitizePassportNumber(data.passportNo || ""),
           firstName: nameParts[0] || "",
           middleName: data.middleName || nameParts.slice(1).join(" "),
           lastName: data.lastName || "",
@@ -391,7 +403,7 @@ export function staysRouter({ uploadDir, exportDir }) {
 
     try {
       const { guest: guestPayload, checkOutDate, phoneNo, checkInDate: requestedCheckInDate, status } = parsed.data;
-      const passportNo = guestPayload.passportNo.trim().toUpperCase();
+      const passportNo = sanitizePassportNumber(guestPayload.passportNo);
       const normalizedNationality = normalizeNationality(guestPayload.nationality);
       if (isThaiNationality(normalizedNationality)) {
         return sendThaiNationalityResponse(res);
@@ -487,7 +499,7 @@ export function staysRouter({ uploadDir, exportDir }) {
     try {
       const extraction = await extractPassportDataWithNvidia(req.file);
       console.log("[UPLOAD_IMAGE] Extraction raw result", extraction.data);
-      const passportNo = String(extraction.data.passportNumber || "").trim().toUpperCase();
+      const passportNo = sanitizePassportNumber(extraction.data.passportNumber || "");
       const firstName = String(extraction.data.name || "").trim();
       const middleName = String(extraction.data.middleName || "").trim();
       const lastName = String(extraction.data.lastName || "").trim();
@@ -676,7 +688,7 @@ export function staysRouter({ uploadDir, exportDir }) {
           warnings.push("mrz_low_confidence");
         }
 
-        const passportNo = (data.passportNo || "").trim();
+        const passportNo = sanitizePassportNumber(data.passportNo || "");
 
         const normalizedGender = normalizeGender(data.gender);
 
@@ -700,6 +712,16 @@ export function staysRouter({ uploadDir, exportDir }) {
             nationality: normalizedNationality,
             birthDateDDMMYYYY: data.birthDateDDMMYYYY || ""
           });
+        }
+        else {
+          guest.passportNo = sanitizePassportNumber(passportNo);
+          guest.firstName = sanitizeTm30NamePart(normalizedFirstName);
+          guest.middleName = sanitizeTm30NamePart(normalizedMiddleName);
+          guest.lastName = sanitizeTm30NamePart(data.lastName || "");
+          guest.gender = normalizedGender;
+          guest.nationality = normalizedNationality;
+          guest.birthDateDDMMYYYY = data.birthDateDDMMYYYY || "";
+          await guest.save();
         }
 
         const checkInDate = parsed.data.checkInDate || todayIsoDate();
@@ -784,7 +806,7 @@ export function staysRouter({ uploadDir, exportDir }) {
           guest: guest._id
             ? {
               id: String(guest._id),
-              passportNo: guest.passportNo,
+              passportNo: sanitizePassportNumber(guest.passportNo),
               firstName: guest.firstName,
               middleName: guest.middleName,
               lastName: guest.lastName,
@@ -967,7 +989,7 @@ export function staysRouter({ uploadDir, exportDir }) {
         middleName: sanitizeTm30NamePart(s.guestId.middleName || ""),
         lastName: sanitizeTm30NamePart(s.guestId.lastName || ""),
         gender: s.guestId.gender || "",
-        passportNo: s.guestId.passportNo || "",
+        passportNo: sanitizePassportNumber(s.guestId.passportNo || ""),
         nationality: s.guestId.nationality || "",
         birthDate: s.guestId.birthDateDDMMYYYY || "",
         checkOut: s.checkOutDDMMYYYY || "",

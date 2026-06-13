@@ -15,6 +15,16 @@ const TASK_TOKEN_TTL_SECONDS = 60 * 30;
 const TASK_DOWNLOAD_PURPOSE = "tm30-task";
 const TASK_STATUSES = new Set(TM30_TASK_STATUSES);
 
+function sanitizePassportNumber(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9]/g, "")
+    .trim();
+}
+
 function getTaskTokenSecret() {
   return process.env.JWT_SECRET || process.env.SESSION_SECRET;
 }
@@ -127,7 +137,7 @@ export function tm30Router({ exportDir, extensionZipPath }) {
         middleName: stay.guestId?.middleName || "",
         lastName: stay.guestId?.lastName || "",
         gender: stay.guestId?.gender || "",
-        passportNo: stay.guestId?.passportNo || "",
+        passportNo: sanitizePassportNumber(stay.guestId?.passportNo || ""),
         nationality: stay.guestId?.nationality || "",
         birthDate: stay.guestId?.birthDateDDMMYYYY || "",
         checkOut: stay.checkOutDDMMYYYY || "",
