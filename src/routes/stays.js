@@ -149,6 +149,53 @@ function toDdMmYyyy(value = "") {
   return normalized;
 }
 
+function isDdMmYyyy(value = "") {
+  return /^\d{2}\/\d{2}\/\d{4}$/.test(String(value || "").trim());
+}
+
+function normalizeBirthDateForTm30(value = "") {
+  const normalizedIso = normalizeBirthDateForForm(value);
+  const normalizedDdMmYyyy = toDdMmYyyy(normalizedIso || value);
+  return isDdMmYyyy(normalizedDdMmYyyy) ? normalizedDdMmYyyy : "";
+}
+
+function buildValidatedTm30Row(stay) {
+  const firstName = sanitizeTm30NamePart(stay?.guestId?.firstName || "");
+  const middleName = sanitizeTm30NamePart(stay?.guestId?.middleName || "");
+  const lastName = sanitizeTm30NamePart(stay?.guestId?.lastName || "");
+  const gender = normalizeGender(stay?.guestId?.gender || "");
+  const passportNo = sanitizePassportNumber(stay?.guestId?.passportNo || "");
+  const nationality = normalizeNationality(stay?.guestId?.nationality || "");
+  const birthDateRaw = String(stay?.guestId?.birthDateDDMMYYYY || "").trim();
+  const birthDate = normalizeBirthDateForTm30(birthDateRaw);
+  const checkOut = toDdMmYyyy(stay?.checkOutDDMMYYYY || "");
+  const phoneNo = String(stay?.phoneNo || "").trim();
+
+  const invalidFields = [];
+  if (!firstName) invalidFields.push("firstName");
+  if (!lastName) invalidFields.push("lastName");
+  if (!gender) invalidFields.push("gender");
+  if (!passportNo) invalidFields.push("passportNo");
+  if (!nationality || !/^[A-Z]{3}$/.test(nationality)) invalidFields.push("nationality");
+  if (!checkOut || !isDdMmYyyy(checkOut)) invalidFields.push("checkOut");
+  if (birthDateRaw && !birthDate) invalidFields.push("birthDate");
+
+  return {
+    row: {
+      firstName,
+      middleName,
+      lastName,
+      gender,
+      passportNo,
+      nationality,
+      birthDate,
+      checkOut,
+      phoneNo
+    },
+    invalidFields
+  };
+}
+
 function buildStayResponse({ stay, guest, checkInDate, warnings = [] }) {
   const sanitizedGuest = sanitizeGuestNamesForTm30(guest);
   const source =
@@ -979,22 +1026,34 @@ export function staysRouter({ uploadDir, exportDir }) {
       });
     }
 
+    const validatedRows = exportableStays.map((stay) => ({
+      stayId: String(stay._id),
+      passportNo: sanitizePassportNumber(stay?.guestId?.passportNo || ""),
+      ...buildValidatedTm30Row(stay)
+    }));
+
+    const invalidRows = validatedRows
+      .filter((entry) => entry.invalidFields.length > 0)
+      .map((entry) => ({
+        stayId: entry.stayId,
+        passportNo: entry.passportNo,
+        invalidFields: entry.invalidFields
+      }));
+
+    if (invalidRows.length) {
+      return res.status(422).json({
+        error: "Some records have invalid TM30 export format.",
+        message: "Review the listed records before generating the Excel.",
+        invalidRows
+      });
+    }
+
     const fileBase = `TM30_InformAccom_${date.replaceAll("-", "")}`;
     const outXlsx = path.join(exportDir, `${fileBase}.xlsx`);
 
     await generateTm30Excel({
       outFileXlsx: outXlsx,
-      rows: exportableStays.map((s) => ({
-        firstName: sanitizeTm30NamePart(s.guestId.firstName || ""),
-        middleName: sanitizeTm30NamePart(s.guestId.middleName || ""),
-        lastName: sanitizeTm30NamePart(s.guestId.lastName || ""),
-        gender: s.guestId.gender || "",
-        passportNo: sanitizePassportNumber(s.guestId.passportNo || ""),
-        nationality: s.guestId.nationality || "",
-        birthDate: s.guestId.birthDateDDMMYYYY || "",
-        checkOut: s.checkOutDDMMYYYY || "",
-        phoneNo: s.phoneNo || ""
-      }))
+      rows: validatedRows.map((entry) => entry.row)
     });
 
     await Stay.updateMany(accessFilter, { $set: { status: "exported" } });

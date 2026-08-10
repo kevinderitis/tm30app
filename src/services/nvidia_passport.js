@@ -1,22 +1,24 @@
 import { config } from "../config.js";
 
 const NVIDIA_API_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-const OUTPUT_TOKEN_BUDGETS = [960, 1280];
+const DEFAULT_OUTPUT_TOKEN_BUDGETS = [960, 1280];
+const COMPACT_OUTPUT_TOKEN_BUDGETS = [220, 420];
 const JSON_OUTPUT_EXAMPLE =
   '{"name":"JOHN","middle_name":"PAUL","last_name":"SMITH","birthday":"1990-01-31","gender":"M","nationality":"USA","passport_number":"123456789"}';
 const PASSPORT_JSON_SCHEMA = {
   name: "passport_extraction",
+  strict: true,
   schema: {
     type: "object",
     additionalProperties: false,
     properties: {
-      name: { type: "string" },
-      middle_name: { type: "string" },
-      last_name: { type: "string" },
-      birthday: { type: "string" },
-      gender: { type: "string" },
-      nationality: { type: "string" },
-      passport_number: { type: "string" },
+      name: { type: "string", maxLength: 60 },
+      middle_name: { type: "string", maxLength: 80 },
+      last_name: { type: "string", maxLength: 100 },
+      birthday: { type: "string", pattern: "^$|^\\d{4}-\\d{2}-\\d{2}$" },
+      gender: { type: "string", enum: ["", "M", "F"] },
+      nationality: { type: "string", pattern: "^$|^[A-Z]{3}$" },
+      passport_number: { type: "string", pattern: "^$|^[A-Z0-9]{1,20}$", maxLength: 20 },
     },
     required: [
       "name",
@@ -29,6 +31,15 @@ const PASSPORT_JSON_SCHEMA = {
     ],
   },
 };
+
+function getOutputTokenBudgets() {
+  const model = String(config.nvidiaModel || "").toLowerCase();
+  if (model.includes("nemotron-nano-12b-v2-vl")) {
+    return COMPACT_OUTPUT_TOKEN_BUDGETS;
+  }
+
+  return DEFAULT_OUTPUT_TOKEN_BUDGETS;
+}
 
 function maskApiKey(value = "") {
   if (!value) return "";
@@ -362,6 +373,14 @@ function extractLabeledFields(content = "") {
 }
 
 function normalizePassportData(payload = {}) {
+  const passportNumber = String(
+    payload.passport_number || payload.passportNumber || payload.document_number || ""
+  )
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9]/g, "");
+
   return {
     name: String(payload.name || payload.first_name || payload.firstName || "").trim(),
     middleName: String(payload.middle_name || payload.middleName || "").trim(),
@@ -369,9 +388,7 @@ function normalizePassportData(payload = {}) {
     birthday: String(payload.birthday || payload.date_of_birth || payload.dateOfBirth || "").trim(),
     gender: String(payload.gender || payload.sex || "").trim().toUpperCase(),
     nationality: String(payload.nationality || payload.nationality_code || payload.country_code || "").trim(),
-    passportNumber: String(
-      payload.passport_number || payload.passportNumber || payload.document_number || ""
-    ).trim(),
+    passportNumber: passportNumber.length <= 20 ? passportNumber : "",
   };
 }
 
@@ -421,7 +438,7 @@ function createResponseFormat() {
   };
 }
 
-function createNvidiaImagePayload(dataUrl, maxTokens = OUTPUT_TOKEN_BUDGETS[0]) {
+function createNvidiaImagePayload(dataUrl, maxTokens = getOutputTokenBudgets()[0]) {
   return {
     model: config.nvidiaModel,
     messages: [
@@ -436,7 +453,7 @@ function createNvidiaImagePayload(dataUrl, maxTokens = OUTPUT_TOKEN_BUDGETS[0]) 
           {
             type: "text",
             text:
-              'Extract passport data from this image and return the JSON immediately, without explanation or analysis. Return exactly one minified JSON object with exactly these keys: "name", "middle_name", "last_name", "birthday", "gender", "nationality", "passport_number". Use empty strings if a value is missing. For "birthday", normalize to YYYY-MM-DD when possible. For "gender", return only "M", "F", or "". For "nationality", prefer the 3-letter passport code if visible.',
+              'Extract passport data from this image and return the JSON immediately, without explanation or analysis. Return exactly one minified JSON object with exactly these keys: "name", "middle_name", "last_name", "birthday", "gender", "nationality", "passport_number". Use empty strings if a value is missing. For "birthday", normalize to YYYY-MM-DD when possible. For "gender", return only "M", "F", or "". For "nationality", prefer the 3-letter passport code if visible. For "passport_number", return only the document number printed in the passport number field. Do not copy MRZ lines, check digits, surname, repeated text, or any value longer than 20 alphanumeric characters.',
           },
           {
             type: "image_url",
@@ -482,9 +499,10 @@ export async function extractPassportDataWithNvidia(file) {
   let finalContent = "";
   let finalFinishReason = "";
   let lastResult = null;
+  const outputTokenBudgets = getOutputTokenBudgets();
 
-  for (let index = 0; index < OUTPUT_TOKEN_BUDGETS.length; index += 1) {
-    const maxTokens = OUTPUT_TOKEN_BUDGETS[index];
+  for (let index = 0; index < outputTokenBudgets.length; index += 1) {
+    const maxTokens = outputTokenBudgets[index];
     const result = await createChatCompletion(createNvidiaImagePayload(dataUrl, maxTokens));
     lastResult = result;
     const choice = result?.choices?.[0] || {};
@@ -507,20 +525,20 @@ export async function extractPassportDataWithNvidia(file) {
       break;
     }
 
-    if (finishReason === "length" && !content && index < OUTPUT_TOKEN_BUDGETS.length - 1) {
+    if (finishReason === "length" && !content && index < outputTokenBudgets.length - 1) {
       console.warn("[NVIDIA] Incomplete generation detected, retrying with larger token budget", {
         attempt: index + 1,
         currentMaxTokens: maxTokens,
-        nextMaxTokens: OUTPUT_TOKEN_BUDGETS[index + 1],
+        nextMaxTokens: outputTokenBudgets[index + 1],
       });
       continue;
     }
 
-    if (index < OUTPUT_TOKEN_BUDGETS.length - 1) {
+    if (index < outputTokenBudgets.length - 1) {
       console.warn("[NVIDIA] Response did not produce final JSON content, retrying", {
         attempt: index + 1,
         currentMaxTokens: maxTokens,
-        nextMaxTokens: OUTPUT_TOKEN_BUDGETS[index + 1],
+        nextMaxTokens: outputTokenBudgets[index + 1],
         finishReason,
         hasContent: Boolean(content),
       });
